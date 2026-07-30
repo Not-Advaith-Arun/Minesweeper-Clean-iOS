@@ -1,0 +1,823 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		05A46AFB2EE63B3EB7C6A5E4 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D765E9F00D7C5D0D4C9661C /* AboutView.swift */; };
+		15F952611DDD2C01544439BD /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FAA4B95D764E5BD84E57F04 /* ModelsTests.swift */; };
+		210B675B610525CD9C8E2014 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C6A0C2C860DE3998439CFDC /* Haptics.swift */; };
+		26ACE3E2452C090771E2232F /* MinesweeperCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA8046BF0227433176F03AAA /* MinesweeperCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		2BF0DF983662A2DA6F7CCE04 /* BoardGeneration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16427FE066815EAD5A067578 /* BoardGeneration.swift */; };
+		30201908126F09444CD0BB2E /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62DC2F9C5E227469AB6A17A3 /* DesignSystem.swift */; };
+		3134992AB297504B3C751616 /* BoardGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3769DA01F8DD9328656C7BA7 /* BoardGenerationTests.swift */; };
+		3777BBA1A97136FF8B4AE9F8 /* MinesweeperCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA8046BF0227433176F03AAA /* MinesweeperCore.framework */; };
+		3B9FA4773C5E954C78BBC6D2 /* MineGlyph.svg in Resources */ = {isa = PBXBuildFile; fileRef = 15248C261FE20967363093E3 /* MineGlyph.svg */; };
+		460573B38842D66F45D5A771 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2B345E6D2C71E1E11B1A67 /* AppStore.swift */; };
+		5007E363C10439CA9B699730 /* MinesweeperCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA8046BF0227433176F03AAA /* MinesweeperCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		5D12323CFC38709FE57E1554 /* Rubik-LightItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9D4CC6428B2E66FE1E8F38AD /* Rubik-LightItalic.ttf */; };
+		638EE3EC5532A48BFAF0C1FE /* Rubik-Black.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FBAF69B4EF526F7458153715 /* Rubik-Black.ttf */; };
+		64CE053E5E76F9F18267DB48 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 659023C1D9F7920B3AD670C7 /* Assets.xcassets */; };
+		6EF0C6F16EF51BC830E85070 /* MinesweeperCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA8046BF0227433176F03AAA /* MinesweeperCore.framework */; };
+		7C663665DB55EC7DF50A9962 /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AEA222CD2CF85525B709C63 /* PreviewSupport.swift */; };
+		824306F871A0AB7AA2D957C1 /* AppTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B022E0780850A69E7C8D67CE /* AppTypes.swift */; };
+		84EE4D72AD036D183E8D9EB0 /* ThemeLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD1C83D1AFB2D086C8716AC /* ThemeLibraryView.swift */; };
+		8510B00548CA08832FCA3A08 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E4AD9376EEC3A90AE77E415 /* SettingsView.swift */; };
+		88E8987E501CCBCD38A6382E /* ThemeCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B878E6EFB4E18090C7F190BB /* ThemeCatalog.swift */; };
+		90A17DAEB11EFD7328C79ED7 /* TimesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFEC77FA8CAB3D3AD6C15098 /* TimesView.swift */; };
+		9100D5BD5EAAF8ADA02ACE8D /* GameEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AB87C0FA6088ECDF6EBDAA1 /* GameEngine.swift */; };
+		9193A68ACD1C6DC09E2F71D9 /* PersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B1CEC21424C77ED6516362 /* PersistenceTests.swift */; };
+		93BAADC40AED9B8160839CF9 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6BB8993426B7CD759F87E1 /* HomeView.swift */; };
+		96EB0209E001A5EC632B2165 /* GameEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A87889CD155457923043B01D /* GameEngineTests.swift */; };
+		981579B7CE08D225BE44E44C /* GameCoreAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94490B246BFD353C427AE5CC /* GameCoreAdapter.swift */; };
+		9A77F8B5B84065DFBF2419B1 /* GameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BF5D35F68E914C0293B2FE /* GameView.swift */; };
+		A56F44E24B32555E086266EE /* Rubik-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 426B090F2582FD761DC3AB85 /* Rubik-Bold.ttf */; };
+		AAD3F028E8D22F3376C5F575 /* Rubik-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 75715646C47E1C5ED4EBB919 /* Rubik-Medium.ttf */; };
+		B962F08D7D1431CADF8C952E /* Rubik-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4CBDC99171D3A8C587F0EBBA /* Rubik-BoldItalic.ttf */; };
+		C48BAAD951378703EAFB8856 /* MinesweeperUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58C4E5C1DCEB678AEAA5838D /* MinesweeperUITests.swift */; };
+		C56C9C4D2D6BBF4983912B72 /* Rubik-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C012782C3938F6EC59A4F3F9 /* Rubik-Italic.ttf */; };
+		C8ACD5731F9BEF23219807B1 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 199D38BB7DC2C18EBD59C977 /* Models.swift */; };
+		D03E855D83D0C945C76DDB41 /* MinesweeperApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BAA3F83D1F593E2B593CE68 /* MinesweeperApp.swift */; };
+		D4DE5472311BD749A6EAB501 /* Rubik-MediumItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2720F3A88BDF656A30C66BCC /* Rubik-MediumItalic.ttf */; };
+		D87F56B0F9818D0AABBB50B1 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E591A0E3D4431B3B56F65C96 /* Persistence.swift */; };
+		D8D378574B394BD2C71BF203 /* Rubik-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E3CB29603F52993CED4651BB /* Rubik-Light.ttf */; };
+		DE28261F1B11FE326D69F601 /* Rubik-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BC4330B10EBC140D9A94355F /* Rubik-Regular.ttf */; };
+		EA5246FA9234FACE140136D6 /* BoardRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E07FFBC63069594292C7425F /* BoardRenderer.swift */; };
+		F5A5735C2997A95F44D1F2B8 /* Rubik-BlackItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A7FF26ED9C3C920DDDDA9E23 /* Rubik-BlackItalic.ttf */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		81245614C3AB21097A5F0CA2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7691DD0D49DA693072CEEC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2BFEEA340CEF177A5E5B89FB;
+			remoteInfo = MinesweeperCore;
+		};
+		8FCF26FB19F1D6DB231E0474 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7691DD0D49DA693072CEEC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6A294A0F171CC7F2DBBDE630;
+			remoteInfo = Minesweeper;
+		};
+		E283FBC597C98F26BAC1A3EC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7691DD0D49DA693072CEEC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2BFEEA340CEF177A5E5B89FB;
+			remoteInfo = MinesweeperCore;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2F1902CB525097A866699F8A /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				26ACE3E2452C090771E2232F /* MinesweeperCore.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B6EFCAAD81E009D5677ECA4C /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				5007E363C10439CA9B699730 /* MinesweeperCore.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		03BF5D35F68E914C0293B2FE /* GameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameView.swift; sourceTree = "<group>"; };
+		0AB87C0FA6088ECDF6EBDAA1 /* GameEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEngine.swift; sourceTree = "<group>"; };
+		15248C261FE20967363093E3 /* MineGlyph.svg */ = {isa = PBXFileReference; path = MineGlyph.svg; sourceTree = "<group>"; };
+		16427FE066815EAD5A067578 /* BoardGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGeneration.swift; sourceTree = "<group>"; };
+		199D38BB7DC2C18EBD59C977 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		2720F3A88BDF656A30C66BCC /* Rubik-MediumItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-MediumItalic.ttf"; sourceTree = "<group>"; };
+		2D765E9F00D7C5D0D4C9661C /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		2FAA4B95D764E5BD84E57F04 /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
+		3769DA01F8DD9328656C7BA7 /* BoardGenerationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardGenerationTests.swift; sourceTree = "<group>"; };
+		426B090F2582FD761DC3AB85 /* Rubik-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Bold.ttf"; sourceTree = "<group>"; };
+		4CBDC99171D3A8C587F0EBBA /* Rubik-BoldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-BoldItalic.ttf"; sourceTree = "<group>"; };
+		4D4C1E59CD44ADC6D6134E5B /* MinesweeperCoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MinesweeperCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		516F04A2A12539753FF08617 /* Minesweeper.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Minesweeper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		58C4E5C1DCEB678AEAA5838D /* MinesweeperUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinesweeperUITests.swift; sourceTree = "<group>"; };
+		5C6A0C2C860DE3998439CFDC /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		5E4AD9376EEC3A90AE77E415 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		62DC2F9C5E227469AB6A17A3 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		659023C1D9F7920B3AD670C7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		72B1CEC21424C77ED6516362 /* PersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceTests.swift; sourceTree = "<group>"; };
+		75715646C47E1C5ED4EBB919 /* Rubik-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Medium.ttf"; sourceTree = "<group>"; };
+		7AEA222CD2CF85525B709C63 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
+		7BAA3F83D1F593E2B593CE68 /* MinesweeperApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinesweeperApp.swift; sourceTree = "<group>"; };
+		7BD1C83D1AFB2D086C8716AC /* ThemeLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeLibraryView.swift; sourceTree = "<group>"; };
+		8C2B345E6D2C71E1E11B1A67 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		8F6BB8993426B7CD759F87E1 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		94490B246BFD353C427AE5CC /* GameCoreAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCoreAdapter.swift; sourceTree = "<group>"; };
+		9C6DBB019FB47281732222B2 /* MinesweeperUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MinesweeperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9D4CC6428B2E66FE1E8F38AD /* Rubik-LightItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-LightItalic.ttf"; sourceTree = "<group>"; };
+		A7FF26ED9C3C920DDDDA9E23 /* Rubik-BlackItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-BlackItalic.ttf"; sourceTree = "<group>"; };
+		A87889CD155457923043B01D /* GameEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEngineTests.swift; sourceTree = "<group>"; };
+		B022E0780850A69E7C8D67CE /* AppTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypes.swift; sourceTree = "<group>"; };
+		B878E6EFB4E18090C7F190BB /* ThemeCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeCatalog.swift; sourceTree = "<group>"; };
+		BC4330B10EBC140D9A94355F /* Rubik-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Regular.ttf"; sourceTree = "<group>"; };
+		C012782C3938F6EC59A4F3F9 /* Rubik-Italic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Italic.ttf"; sourceTree = "<group>"; };
+		DA8046BF0227433176F03AAA /* MinesweeperCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MinesweeperCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		DFEC77FA8CAB3D3AD6C15098 /* TimesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimesView.swift; sourceTree = "<group>"; };
+		E07FFBC63069594292C7425F /* BoardRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardRenderer.swift; sourceTree = "<group>"; };
+		E3CB29603F52993CED4651BB /* Rubik-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Light.ttf"; sourceTree = "<group>"; };
+		E591A0E3D4431B3B56F65C96 /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
+		FBAF69B4EF526F7458153715 /* Rubik-Black.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Black.ttf"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		144CA5087AD4493A5820CB87 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6EF0C6F16EF51BC830E85070 /* MinesweeperCore.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F8C816BA26CE5976E51E4A1D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3777BBA1A97136FF8B4AE9F8 /* MinesweeperCore.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		03FDBBE027445F44E72896D9 /* MinesweeperCoreTests */ = {
+			isa = PBXGroup;
+			children = (
+				3769DA01F8DD9328656C7BA7 /* BoardGenerationTests.swift */,
+				A87889CD155457923043B01D /* GameEngineTests.swift */,
+				2FAA4B95D764E5BD84E57F04 /* ModelsTests.swift */,
+				72B1CEC21424C77ED6516362 /* PersistenceTests.swift */,
+			);
+			path = MinesweeperCoreTests;
+			sourceTree = "<group>";
+		};
+		0789A840DFC373EB19B5CAA8 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				FBAF69B4EF526F7458153715 /* Rubik-Black.ttf */,
+				A7FF26ED9C3C920DDDDA9E23 /* Rubik-BlackItalic.ttf */,
+				426B090F2582FD761DC3AB85 /* Rubik-Bold.ttf */,
+				4CBDC99171D3A8C587F0EBBA /* Rubik-BoldItalic.ttf */,
+				C012782C3938F6EC59A4F3F9 /* Rubik-Italic.ttf */,
+				E3CB29603F52993CED4651BB /* Rubik-Light.ttf */,
+				9D4CC6428B2E66FE1E8F38AD /* Rubik-LightItalic.ttf */,
+				75715646C47E1C5ED4EBB919 /* Rubik-Medium.ttf */,
+				2720F3A88BDF656A30C66BCC /* Rubik-MediumItalic.ttf */,
+				BC4330B10EBC140D9A94355F /* Rubik-Regular.ttf */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
+		152B267894891BC7D804089C = {
+			isa = PBXGroup;
+			children = (
+				C426A383C60AD909809A55B3 /* MinesweeperApp */,
+				8814C4BDA867C1F8F38BFA5A /* MinesweeperCore */,
+				03FDBBE027445F44E72896D9 /* MinesweeperCoreTests */,
+				877D109DEE7EA1C39FF79DC2 /* MinesweeperUITests */,
+				996722E2496107DBB7D31DE1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		877D109DEE7EA1C39FF79DC2 /* MinesweeperUITests */ = {
+			isa = PBXGroup;
+			children = (
+				58C4E5C1DCEB678AEAA5838D /* MinesweeperUITests.swift */,
+			);
+			path = MinesweeperUITests;
+			sourceTree = "<group>";
+		};
+		8814C4BDA867C1F8F38BFA5A /* MinesweeperCore */ = {
+			isa = PBXGroup;
+			children = (
+				BDC2BF6666E565F5DBC62A65 /* Sources */,
+			);
+			path = MinesweeperCore;
+			sourceTree = "<group>";
+		};
+		8925E53943F07D4E97220648 /* Artwork */ = {
+			isa = PBXGroup;
+			children = (
+				15248C261FE20967363093E3 /* MineGlyph.svg */,
+			);
+			path = Artwork;
+			sourceTree = "<group>";
+		};
+		996722E2496107DBB7D31DE1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				516F04A2A12539753FF08617 /* Minesweeper.app */,
+				DA8046BF0227433176F03AAA /* MinesweeperCore.framework */,
+				4D4C1E59CD44ADC6D6134E5B /* MinesweeperCoreTests.xctest */,
+				9C6DBB019FB47281732222B2 /* MinesweeperUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BDC2BF6666E565F5DBC62A65 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				16427FE066815EAD5A067578 /* BoardGeneration.swift */,
+				0AB87C0FA6088ECDF6EBDAA1 /* GameEngine.swift */,
+				199D38BB7DC2C18EBD59C977 /* Models.swift */,
+				E591A0E3D4431B3B56F65C96 /* Persistence.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		C426A383C60AD909809A55B3 /* MinesweeperApp */ = {
+			isa = PBXGroup;
+			children = (
+				2D765E9F00D7C5D0D4C9661C /* AboutView.swift */,
+				8C2B345E6D2C71E1E11B1A67 /* AppStore.swift */,
+				B022E0780850A69E7C8D67CE /* AppTypes.swift */,
+				E07FFBC63069594292C7425F /* BoardRenderer.swift */,
+				62DC2F9C5E227469AB6A17A3 /* DesignSystem.swift */,
+				94490B246BFD353C427AE5CC /* GameCoreAdapter.swift */,
+				03BF5D35F68E914C0293B2FE /* GameView.swift */,
+				5C6A0C2C860DE3998439CFDC /* Haptics.swift */,
+				8F6BB8993426B7CD759F87E1 /* HomeView.swift */,
+				7BAA3F83D1F593E2B593CE68 /* MinesweeperApp.swift */,
+				7AEA222CD2CF85525B709C63 /* PreviewSupport.swift */,
+				5E4AD9376EEC3A90AE77E415 /* SettingsView.swift */,
+				B878E6EFB4E18090C7F190BB /* ThemeCatalog.swift */,
+				7BD1C83D1AFB2D086C8716AC /* ThemeLibraryView.swift */,
+				DFEC77FA8CAB3D3AD6C15098 /* TimesView.swift */,
+				C58603536DBC8441ABCC6A34 /* Resources */,
+			);
+			path = MinesweeperApp;
+			sourceTree = "<group>";
+		};
+		C58603536DBC8441ABCC6A34 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				659023C1D9F7920B3AD670C7 /* Assets.xcassets */,
+				8925E53943F07D4E97220648 /* Artwork */,
+				0789A840DFC373EB19B5CAA8 /* Fonts */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2BFEEA340CEF177A5E5B89FB /* MinesweeperCore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DC96F9A059A1E627B28AE4C6 /* Build configuration list for PBXNativeTarget "MinesweeperCore" */;
+			buildPhases = (
+				5891792EA9A856FA152310CA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MinesweeperCore;
+			packageProductDependencies = (
+			);
+			productName = MinesweeperCore;
+			productReference = DA8046BF0227433176F03AAA /* MinesweeperCore.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		65937182C978B063FC4DA8E5 /* MinesweeperCoreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A240F55461007C2ACF15A0C9 /* Build configuration list for PBXNativeTarget "MinesweeperCoreTests" */;
+			buildPhases = (
+				05514BF90C1C243538906F38 /* Sources */,
+				144CA5087AD4493A5820CB87 /* Frameworks */,
+				2F1902CB525097A866699F8A /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				159BCF7035A7FE26D466CE8D /* PBXTargetDependency */,
+			);
+			name = MinesweeperCoreTests;
+			packageProductDependencies = (
+			);
+			productName = MinesweeperCoreTests;
+			productReference = 4D4C1E59CD44ADC6D6134E5B /* MinesweeperCoreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		6A294A0F171CC7F2DBBDE630 /* Minesweeper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E985CE32A776612D1C16E12D /* Build configuration list for PBXNativeTarget "Minesweeper" */;
+			buildPhases = (
+				8A0476CF2785C2222AE9FAD7 /* Sources */,
+				B8DD5CAA28263A0FB564785D /* Resources */,
+				F8C816BA26CE5976E51E4A1D /* Frameworks */,
+				B6EFCAAD81E009D5677ECA4C /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D58414695750F03BBAD81DC9 /* PBXTargetDependency */,
+			);
+			name = Minesweeper;
+			packageProductDependencies = (
+			);
+			productName = Minesweeper;
+			productReference = 516F04A2A12539753FF08617 /* Minesweeper.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DD8565872B8CE7DAAD0AF33D /* MinesweeperUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B8EB83CDEDD4825DF448ED22 /* Build configuration list for PBXNativeTarget "MinesweeperUITests" */;
+			buildPhases = (
+				022ACC3A46DBD8A61C4C2E5A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9CFF05D1FFD9BF0B4FCDCB3A /* PBXTargetDependency */,
+			);
+			name = MinesweeperUITests;
+			packageProductDependencies = (
+			);
+			productName = MinesweeperUITests;
+			productReference = 9C6DBB019FB47281732222B2 /* MinesweeperUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7691DD0D49DA693072CEEC07 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					DD8565872B8CE7DAAD0AF33D = {
+						TestTargetID = 6A294A0F171CC7F2DBBDE630;
+					};
+				};
+			};
+			buildConfigurationList = B7C2A9FD92F5E32AB0788BB6 /* Build configuration list for PBXProject "Minesweeper" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 152B267894891BC7D804089C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 996722E2496107DBB7D31DE1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6A294A0F171CC7F2DBBDE630 /* Minesweeper */,
+				2BFEEA340CEF177A5E5B89FB /* MinesweeperCore */,
+				65937182C978B063FC4DA8E5 /* MinesweeperCoreTests */,
+				DD8565872B8CE7DAAD0AF33D /* MinesweeperUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B8DD5CAA28263A0FB564785D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64CE053E5E76F9F18267DB48 /* Assets.xcassets in Resources */,
+				3B9FA4773C5E954C78BBC6D2 /* MineGlyph.svg in Resources */,
+				638EE3EC5532A48BFAF0C1FE /* Rubik-Black.ttf in Resources */,
+				F5A5735C2997A95F44D1F2B8 /* Rubik-BlackItalic.ttf in Resources */,
+				A56F44E24B32555E086266EE /* Rubik-Bold.ttf in Resources */,
+				B962F08D7D1431CADF8C952E /* Rubik-BoldItalic.ttf in Resources */,
+				C56C9C4D2D6BBF4983912B72 /* Rubik-Italic.ttf in Resources */,
+				D8D378574B394BD2C71BF203 /* Rubik-Light.ttf in Resources */,
+				5D12323CFC38709FE57E1554 /* Rubik-LightItalic.ttf in Resources */,
+				AAD3F028E8D22F3376C5F575 /* Rubik-Medium.ttf in Resources */,
+				D4DE5472311BD749A6EAB501 /* Rubik-MediumItalic.ttf in Resources */,
+				DE28261F1B11FE326D69F601 /* Rubik-Regular.ttf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		022ACC3A46DBD8A61C4C2E5A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C48BAAD951378703EAFB8856 /* MinesweeperUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		05514BF90C1C243538906F38 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3134992AB297504B3C751616 /* BoardGenerationTests.swift in Sources */,
+				96EB0209E001A5EC632B2165 /* GameEngineTests.swift in Sources */,
+				15F952611DDD2C01544439BD /* ModelsTests.swift in Sources */,
+				9193A68ACD1C6DC09E2F71D9 /* PersistenceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5891792EA9A856FA152310CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2BF0DF983662A2DA6F7CCE04 /* BoardGeneration.swift in Sources */,
+				9100D5BD5EAAF8ADA02ACE8D /* GameEngine.swift in Sources */,
+				C8ACD5731F9BEF23219807B1 /* Models.swift in Sources */,
+				D87F56B0F9818D0AABBB50B1 /* Persistence.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8A0476CF2785C2222AE9FAD7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				05A46AFB2EE63B3EB7C6A5E4 /* AboutView.swift in Sources */,
+				460573B38842D66F45D5A771 /* AppStore.swift in Sources */,
+				824306F871A0AB7AA2D957C1 /* AppTypes.swift in Sources */,
+				EA5246FA9234FACE140136D6 /* BoardRenderer.swift in Sources */,
+				30201908126F09444CD0BB2E /* DesignSystem.swift in Sources */,
+				981579B7CE08D225BE44E44C /* GameCoreAdapter.swift in Sources */,
+				9A77F8B5B84065DFBF2419B1 /* GameView.swift in Sources */,
+				210B675B610525CD9C8E2014 /* Haptics.swift in Sources */,
+				93BAADC40AED9B8160839CF9 /* HomeView.swift in Sources */,
+				D03E855D83D0C945C76DDB41 /* MinesweeperApp.swift in Sources */,
+				7C663665DB55EC7DF50A9962 /* PreviewSupport.swift in Sources */,
+				8510B00548CA08832FCA3A08 /* SettingsView.swift in Sources */,
+				88E8987E501CCBCD38A6382E /* ThemeCatalog.swift in Sources */,
+				84EE4D72AD036D183E8D9EB0 /* ThemeLibraryView.swift in Sources */,
+				90A17DAEB11EFD7328C79ED7 /* TimesView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		159BCF7035A7FE26D466CE8D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2BFEEA340CEF177A5E5B89FB /* MinesweeperCore */;
+			targetProxy = 81245614C3AB21097A5F0CA2 /* PBXContainerItemProxy */;
+		};
+		9CFF05D1FFD9BF0B4FCDCB3A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6A294A0F171CC7F2DBBDE630 /* Minesweeper */;
+			targetProxy = 8FCF26FB19F1D6DB231E0474 /* PBXContainerItemProxy */;
+		};
+		D58414695750F03BBAD81DC9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2BFEEA340CEF177A5E5B89FB /* MinesweeperCore */;
+			targetProxy = E283FBC597C98F26BAC1A3EC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		07FC5E64FAB25BBFE02345D0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		21F2F99487480382A3CA46BB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica.CoreTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		481035A102EA8040CC9D29DE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MinesweeperApp/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.21.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica;
+				PRODUCT_NAME = Minesweeper;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		5284FEF898C6F8FF3F7A249B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		6D5FF737199D91B91A17A979 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica.UITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Minesweeper;
+			};
+			name = Release;
+		};
+		76AFEA085B92BBE957BA73F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica.CoreTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8B212A2409F85B334461D436 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MinesweeperApp/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.21.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica;
+				PRODUCT_NAME = Minesweeper;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		9352AFAD85DEE476CC280041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica.Core;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		DC17E9AF859A24579C0064AB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica.Core;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		E231D71821B91510609C05C5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica.UITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Minesweeper;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A240F55461007C2ACF15A0C9 /* Build configuration list for PBXNativeTarget "MinesweeperCoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				21F2F99487480382A3CA46BB /* Debug */,
+				76AFEA085B92BBE957BA73F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B7C2A9FD92F5E32AB0788BB6 /* Build configuration list for PBXProject "Minesweeper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				07FC5E64FAB25BBFE02345D0 /* Debug */,
+				5284FEF898C6F8FF3F7A249B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B8EB83CDEDD4825DF448ED22 /* Build configuration list for PBXNativeTarget "MinesweeperUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E231D71821B91510609C05C5 /* Debug */,
+				6D5FF737199D91B91A17A979 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DC96F9A059A1E627B28AE4C6 /* Build configuration list for PBXNativeTarget "MinesweeperCore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9352AFAD85DEE476CC280041 /* Debug */,
+				DC17E9AF859A24579C0064AB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E985CE32A776612D1C16E12D /* Build configuration list for PBXNativeTarget "Minesweeper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B212A2409F85B334461D436 /* Debug */,
+				481035A102EA8040CC9D29DE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 7691DD0D49DA693072CEEC07 /* Project object */;
+}
