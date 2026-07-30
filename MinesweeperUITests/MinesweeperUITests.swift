@@ -31,6 +31,8 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(actionToggle.exists)
 
     if longPress.value as? String == "1" { longPress.tap() }
+    expectation(for: NSPredicate(format: "value == '0'"), evaluatedWith: longPress)
+    expectation(for: NSPredicate(format: "value == '1'"), evaluatedWith: actionToggle)
     expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: actionToggle)
     waitForExpectations(timeout: 3)
     XCTAssertEqual(actionToggle.value as? String, "1")

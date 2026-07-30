@@ -151,11 +151,11 @@ private struct SettingsToggle: View {
     .toggleStyle(.switch)
     .tint(store.theme.accent)
     .foregroundStyle(store.theme.foreground)
-    .disabled(disabled)
     .opacity(disabled ? 0.48 : 1)
     .padding(.horizontal, 16)
     .frame(minHeight: 65)
     .accessibilityIdentifier(identifier)
+    .disabled(disabled)
   }
 }
 
