@@ -140,7 +140,7 @@ struct AppTheme: Identifiable, Hashable {
     self.foreground = Color(hex: foreground)
     self.muted = Color(hex: muted)
     self.mine = Color(hex: mine)
-    self.clueColors = clues.map(Color.init(hex:))
+    self.clueColors = clues.map { Color(hex: $0) }
     self.isAMOLED = isAMOLED
   }
 
