@@ -128,7 +128,7 @@ enum AppConstants {
 
 extension Int {
   var clockString: String {
-    let clamped = max(0, self)
+    let clamped = Swift.max(0, self)
     let hours = clamped / 3_600
     let minutes = (clamped % 3_600) / 60
     let seconds = clamped % 60
