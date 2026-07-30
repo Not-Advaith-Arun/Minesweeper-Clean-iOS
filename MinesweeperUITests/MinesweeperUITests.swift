@@ -30,7 +30,9 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(longPress.waitForExistence(timeout: 2))
     XCTAssertTrue(actionToggle.exists)
 
-    if longPress.value as? String == "1" { longPress.tap() }
+    if longPress.value as? String == "1" {
+      longPress.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+    }
     expectation(for: NSPredicate(format: "value == '0'"), evaluatedWith: longPress)
     expectation(for: NSPredicate(format: "value == '1'"), evaluatedWith: actionToggle)
     expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: actionToggle)
