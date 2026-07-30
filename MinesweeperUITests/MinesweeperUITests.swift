@@ -18,7 +18,7 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.buttons["home.themes"].exists)
     XCTAssertTrue(app.buttons["home.times"].exists)
     XCTAssertTrue(app.buttons["home.about"].exists)
-    XCTAssertTrue(app.otherElements["home.difficulty"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["home.difficulty"].exists)
   }
 
   func testSettingsLongPressDependencyAndReset() {
@@ -31,11 +31,15 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(actionToggle.exists)
 
     if longPress.value as? String == "1" { longPress.tap() }
+    expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: actionToggle)
+    waitForExpectations(timeout: 3)
     XCTAssertEqual(actionToggle.value as? String, "1")
     XCTAssertFalse(actionToggle.isEnabled)
 
     app.buttons["settings.reset"].tap()
     app.alerts["Reset settings?"].buttons["Reset"].tap()
+    expectation(for: NSPredicate(format: "value == '1'"), evaluatedWith: longPress)
+    waitForExpectations(timeout: 3)
     XCTAssertEqual(longPress.value as? String, "1")
   }
 

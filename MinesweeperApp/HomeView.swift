@@ -35,7 +35,6 @@ struct HomeView: View {
 
         DifficultyCarousel(selection: $store.selectedDifficulty)
           .frame(height: 60)
-          .accessibilityIdentifier("home.difficulty")
 
         VStack(spacing: 12) {
           Button("New game") { store.beginNewGame(for: store.selectedDifficulty) }
@@ -115,6 +114,7 @@ private struct DifficultyCarousel: View {
     .accessibilityLabel(
       "Difficulty: \(selection.title), \(selection.size.columns) by \(selection.size.rows), \(selection.size.mines) mines"
     )
+    .accessibilityIdentifier("home.difficulty")
   }
 
   private func move(_ offset: Int) {
