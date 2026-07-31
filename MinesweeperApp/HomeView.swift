@@ -16,29 +16,31 @@ struct HomeView: View {
             store.navigation.append(.themes)
           } label: {
             Image(systemName: "paintpalette.fill")
-              .font(.system(size: 15, weight: .medium))
-              .frame(width: 36, height: 36)
+              .font(.system(size: 27, weight: .regular))
+              .foregroundStyle(theme.foreground.opacity(0.76))
+              .frame(width: 48, height: 48)
           }
           .buttonStyle(.plain)
           .accessibilityLabel("Themes")
           .accessibilityIdentifier("home.quickThemes")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, 25)
+        .padding(.top, 42)
 
-        Spacer(minLength: 28)
+        Spacer(minLength: 80)
 
-        MineLogo(theme: theme, size: 112)
+        MineLogo(theme: theme, size: 154)
           .accessibilityLabel("Minesweeper")
 
         Spacer(minLength: 42)
 
         DifficultyCarousel(selection: $store.selectedDifficulty)
-          .frame(height: 60)
+          .frame(height: 44)
+          .frame(maxWidth: ReplicaMetrics.maxControlWidth)
 
-        VStack(spacing: 12) {
-          Button("New game") { store.beginNewGame(for: store.selectedDifficulty) }
-            .buttonStyle(CleanButtonStyle(theme: theme))
+        VStack(spacing: 22) {
+          Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
+            .buttonStyle(AndroidPillButtonStyle(theme: theme))
             .disabled(!store.persistenceReady)
             .opacity(store.persistenceReady ? 1 : 0.62)
             .accessibilityIdentifier("home.newGame")
@@ -51,23 +53,26 @@ struct HomeView: View {
                 Text("Resume")
                 Text(saved.elapsedSeconds.clockString)
                   .monospacedDigit()
-                  .foregroundStyle(theme.background.opacity(0.72))
+                  .font(.rubik(16, weight: .regular))
+                  .foregroundStyle(theme.muted.opacity(0.72))
               }
             }
-            .buttonStyle(CleanButtonStyle(theme: theme))
+            .buttonStyle(AndroidPillButtonStyle(theme: theme))
             .accessibilityIdentifier("home.resume")
           }
         }
-        .frame(maxWidth: 280)
+        .frame(maxWidth: ReplicaMetrics.maxControlWidth)
+        .padding(.top, 10)
+        .padding(.horizontal, ReplicaMetrics.horizontalInset)
 
-        Spacer(minLength: 24)
+        Spacer(minLength: 48)
 
         HomeActionBar()
-          .padding(.horizontal, 22)
-          .padding(.bottom, 12)
+          .padding(.horizontal, 58)
+          .padding(.bottom, 46)
       }
     }
-    .foregroundStyle(theme.foreground)
+    .foregroundStyle(theme.foreground.opacity(0.78))
     .toolbar(.hidden, for: .navigationBar)
     .alert("Start a new game?", isPresented: $store.showReplacementWarning) {
       Button("Cancel", role: .cancel) { store.pendingDifficulty = nil }
@@ -91,25 +96,31 @@ private struct DifficultyCarousel: View {
         Image(systemName: "chevron.left").frame(width: 34, height: 34)
       }
       .buttonStyle(.plain)
+      .opacity(0)
+      .accessibilityHidden(true)
 
       TabView(selection: $selection) {
         ForEach(ReplicaDifficulty.allCases) { difficulty in
           Text(difficulty.title)
-            .font(.rubik(14, weight: .regular))
+            .font(.rubik(20, weight: .regular))
+            .foregroundStyle(theme.foreground.opacity(0.78))
             .tag(difficulty)
         }
       }
       .tabViewStyle(.page(indexDisplayMode: .never))
-      .frame(maxWidth: 180)
+      .frame(maxWidth: 168)
 
       Button {
         move(1)
       } label: {
-        Image(systemName: "chevron.right").frame(width: 34, height: 34)
+        Image(systemName: "chevron.right")
+          .font(.system(size: 31, weight: .light))
+          .frame(width: 44, height: 44)
+          .foregroundStyle(theme.foreground.opacity(0.54))
       }
       .buttonStyle(.plain)
     }
-    .foregroundStyle(theme.foreground)
+    .foregroundStyle(theme.foreground.opacity(0.78))
     .accessibilityElement(children: .combine)
     .accessibilityLabel(
       "Difficulty: \(selection.title), \(selection.size.columns) by \(selection.size.rows), \(selection.size.mines) mines"
@@ -146,9 +157,9 @@ private struct HomeActionBar: View {
   {
     Button(action: action) {
       Image(systemName: symbol)
-        .font(.system(size: 16, weight: .regular))
-        .frame(width: 44, height: 44)
-        .foregroundStyle(store.theme.foreground)
+        .font(.system(size: 28, weight: .regular))
+        .frame(width: 48, height: 48)
+        .foregroundStyle(store.theme.foreground.opacity(0.72))
     }
     .buttonStyle(.plain)
     .accessibilityLabel(label)

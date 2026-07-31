@@ -90,6 +90,8 @@ final class GameSessionController {
   private(set) var completionRecord: ReplicaTimeRecord?
   private(set) var feedbackSequence = 0
   private(set) var feedbackAction: PrimaryAction = .dig
+  private(set) var lastChangedCoordinates: Set<CellCoordinate> = []
+  private(set) var lastActionCoordinate: CellCoordinate?
 
   let difficulty: ReplicaDifficulty
   private var engine: GameEngine
@@ -100,7 +102,11 @@ final class GameSessionController {
     self.difficulty = difficulty
     self.settings = settings
     let initialMode: ActionMode = settings.primaryAction == .dig ? .dig : .flag
-    self.engine = GameEngine(difficulty: difficulty.coreValue, actionMode: initialMode)
+    self.engine = GameEngine(
+      difficulty: difficulty.coreValue,
+      actionMode: initialMode,
+      generator: FastBoardGenerator()
+    )
     self.board = BoardPresentation(columns: difficulty.size.columns, rows: difficulty.size.rows)
     self.remainingMineCount = difficulty.size.mines
     self.actionMode = settings.primaryAction
@@ -152,11 +158,14 @@ final class GameSessionController {
   func restart() {
     engine = GameEngine(
       difficulty: difficulty.coreValue,
-      actionMode: settings.primaryAction == .dig ? .dig : .flag
+      actionMode: settings.primaryAction == .dig ? .dig : .flag,
+      generator: FastBoardGenerator()
     )
     explodedMine = nil
     completionRecord = nil
     errorMessage = nil
+    lastChangedCoordinates = []
+    lastActionCoordinate = nil
     isLoading = false
     refreshPresentation()
   }
@@ -234,6 +243,8 @@ final class GameSessionController {
       self.engine = outcome.engine
       self.explodedMine = outcome.result?.explodedMine
       self.errorMessage = outcome.errorDescription
+      self.lastActionCoordinate = coordinate
+      self.lastChangedCoordinates = outcome.result?.changedCoordinates ?? []
       self.isLoading = false
       if outcome.result?.didChange == true {
         if !outcome.engine.phase.isFinished {

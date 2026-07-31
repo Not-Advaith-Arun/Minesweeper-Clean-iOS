@@ -24,6 +24,10 @@
     ]
     BoardRenderer(
       board: BoardPresentation(columns: 4, rows: 3, cells: cells),
+      phase: .playing,
+      isLoading: false,
+      changedCoordinates: [],
+      actionCoordinate: nil,
       theme: ThemeCatalog.fallback,
       showsBorders: true,
       longPressEnabled: true,

@@ -9,7 +9,7 @@ struct SettingsView: View {
     ZStack {
       ReplicaBackground(theme: theme)
       ScrollView {
-        LazyVStack(spacing: 12) {
+        LazyVStack(spacing: 28) {
           SettingsGroup(title: "Board") {
             SettingsToggle(
               title: "Cell borders",
@@ -88,7 +88,9 @@ struct SettingsView: View {
             .padding(.vertical, 14)
             .accessibilityIdentifier("settings.reset")
         }
-        .padding(16)
+        .padding(.horizontal, 28)
+        .padding(.top, 28)
+        .padding(.bottom, 42)
       }
     }
     .navigationTitle("Settings")
@@ -118,17 +120,10 @@ private struct SettingsGroup<Content: View>: View {
   var body: some View {
     VStack(spacing: 0) {
       SectionHeader(title: title, theme: store.theme)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
-      VStack(spacing: 0) { content }
-        .background(
-          RoundedRectangle(cornerRadius: 18, style: .continuous).fill(store.theme.surface)
-        )
-        .overlay(
-          RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(
-            store.theme.muted.opacity(0.16), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.bottom, 10)
+      VStack(spacing: 0) {
+        content
+      }
     }
   }
 }
@@ -143,17 +138,21 @@ private struct SettingsToggle: View {
 
   var body: some View {
     Toggle(isOn: $isOn) {
-      VStack(alignment: .leading, spacing: 3) {
-        Text(title).font(.rubik(15, weight: .medium))
-        Text(detail).font(.rubik(11)).foregroundStyle(store.theme.muted)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title).font(.rubik(16, weight: .regular))
+        Text(detail).font(.rubik(12)).foregroundStyle(store.theme.muted.opacity(0.84))
       }
     }
     .toggleStyle(.switch)
     .tint(store.theme.accent)
-    .foregroundStyle(store.theme.foreground)
+    .foregroundStyle(store.theme.foreground.opacity(0.84))
     .opacity(disabled ? 0.48 : 1)
-    .padding(.horizontal, 16)
-    .frame(minHeight: 65)
+    .padding(.vertical, 13)
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(store.theme.muted.opacity(0.14))
+        .frame(height: ReplicaMetrics.thinStroke)
+    }
     .accessibilityIdentifier(identifier)
     .disabled(disabled)
   }
@@ -166,7 +165,7 @@ private struct SettingsPicker: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(title).font(.rubik(15, weight: .medium))
+      Text(title).font(.rubik(16, weight: .regular))
       HStack(spacing: 8) {
         ForEach(PrimaryAction.allCases) { action in
           Button {
@@ -174,11 +173,11 @@ private struct SettingsPicker: View {
             store.haptic(.selection)
           } label: {
             Label(action.title, systemImage: action.symbol)
-              .font(.rubik(13, weight: .medium))
+              .font(.rubik(13, weight: .regular))
               .foregroundStyle(
                 selection == action ? store.theme.background : store.theme.foreground
               )
-              .frame(maxWidth: .infinity, minHeight: 36)
+              .frame(maxWidth: .infinity, minHeight: 38)
               .background(
                 Capsule().fill(
                   selection == action
@@ -192,8 +191,13 @@ private struct SettingsPicker: View {
         }
       }
     }
-    .foregroundStyle(store.theme.foreground)
-    .padding(16)
+    .foregroundStyle(store.theme.foreground.opacity(0.84))
+    .padding(.vertical, 13)
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(store.theme.muted.opacity(0.14))
+        .frame(height: ReplicaMetrics.thinStroke)
+    }
   }
 }
 
@@ -209,7 +213,7 @@ private struct SettingsSlider: View {
   var body: some View {
     VStack(spacing: 6) {
       HStack {
-        Text(title).font(.rubik(15, weight: .medium))
+        Text(title).font(.rubik(16, weight: .regular))
         Spacer()
         Text(formatted(value))
           .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -218,10 +222,14 @@ private struct SettingsSlider: View {
       Slider(value: $value, in: range, step: step)
         .tint(store.theme.accent)
     }
-    .foregroundStyle(store.theme.foreground)
+    .foregroundStyle(store.theme.foreground.opacity(0.84))
     .disabled(disabled)
     .opacity(disabled ? 0.48 : 1)
-    .padding(.horizontal, 16)
-    .frame(minHeight: 72)
+    .padding(.vertical, 13)
+    .overlay(alignment: .bottom) {
+      Rectangle()
+        .fill(store.theme.muted.opacity(0.14))
+        .frame(height: ReplicaMetrics.thinStroke)
+    }
   }
 }

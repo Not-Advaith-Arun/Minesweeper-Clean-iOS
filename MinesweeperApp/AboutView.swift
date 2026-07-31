@@ -8,27 +8,27 @@ struct AboutView: View {
     let theme = store.theme
     ZStack {
       ReplicaBackground(theme: theme)
-      VStack(spacing: 18) {
-        MineLogo(theme: theme, size: 76)
-        VStack(spacing: 4) {
+      VStack(spacing: 22) {
+        Spacer(minLength: 80)
+        MineLogo(theme: theme, size: 104)
+        VStack(spacing: 6) {
           Text(AppConstants.replicaName)
-            .font(.rubik(24, weight: .semibold))
+            .font(.rubik(24, weight: .regular))
           Text(AppConstants.appSubtitle.uppercased())
             .font(.rubik(11, weight: .medium))
-            .tracking(1.8)
             .foregroundStyle(theme.muted)
         }
 
         Text(
           "A private, ad-free recreation made for personal play. Not affiliated with or endorsed by Dustland Design."
         )
-        .font(.rubik(14))
+        .font(.rubik(14, weight: .regular))
         .multilineTextAlignment(.center)
-        .foregroundStyle(theme.foreground.opacity(0.82))
+        .foregroundStyle(theme.foreground.opacity(0.72))
         .frame(maxWidth: 310)
 
         Text("Plays entirely offline")
-          .font(.rubik(12, weight: .medium))
+          .font(.rubik(12, weight: .regular))
           .foregroundStyle(theme.muted)
 
         Text("Reference v1.21.3  •  Rubik typeface  •  Material Symbols")
@@ -37,12 +37,15 @@ struct AboutView: View {
           .foregroundStyle(theme.muted)
 
         Button("Done") { dismiss() }
-          .buttonStyle(CleanButtonStyle(theme: theme, filled: true))
-          .frame(maxWidth: 220)
+          .buttonStyle(AndroidPillButtonStyle(theme: theme))
+          .frame(maxWidth: ReplicaMetrics.maxControlWidth)
+          .padding(.top, 14)
           .accessibilityIdentifier("about.done")
+
+        Spacer(minLength: 120)
       }
-      .padding(28)
-      .foregroundStyle(theme.foreground)
+      .padding(.horizontal, ReplicaMetrics.horizontalInset)
+      .foregroundStyle(theme.foreground.opacity(0.78))
     }
   }
 }

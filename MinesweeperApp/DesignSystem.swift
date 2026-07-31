@@ -29,6 +29,13 @@ enum ReplicaSpacing {
   static let huge: CGFloat = 36
 }
 
+enum ReplicaMetrics {
+  static let horizontalInset: CGFloat = 36
+  static let maxControlWidth: CGFloat = 302
+  static let pillHeight: CGFloat = 44
+  static let thinStroke: CGFloat = 1
+}
+
 enum ReplicaMotion {
   static func standard(speedPercent: Double) -> Animation? {
     guard speedPercent > 0 else { return nil }
@@ -66,6 +73,31 @@ struct CleanButtonStyle: ButtonStyle {
   }
 }
 
+struct AndroidPillButtonStyle: ButtonStyle {
+  let theme: AppTheme
+  var filled = false
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.rubik(19, weight: .regular))
+      .foregroundStyle(filled ? theme.background : theme.foreground.opacity(0.78))
+      .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
+      .padding(.horizontal, 20)
+      .background {
+        Capsule(style: .continuous)
+          .fill(filled ? theme.foreground : theme.background.opacity(0.001))
+          .overlay {
+            Capsule(style: .continuous)
+              .stroke(
+                theme.muted.opacity(configuration.isPressed ? 0.42 : 0.24),
+                lineWidth: ReplicaMetrics.thinStroke)
+          }
+      }
+      .opacity(configuration.isPressed ? 0.62 : 1)
+      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+  }
+}
+
 struct RoundIconButtonStyle: ButtonStyle {
   let theme: AppTheme
   var size: CGFloat = 46
@@ -73,11 +105,11 @@ struct RoundIconButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.rubik(size * 0.4, weight: .medium))
-      .foregroundStyle(filled ? theme.background : theme.foreground)
+      .font(.rubik(size * 0.4, weight: .regular))
+      .foregroundStyle(filled ? theme.background : theme.foreground.opacity(0.76))
       .frame(width: size, height: size)
-      .background(Circle().fill(filled ? theme.foreground : theme.surface.opacity(0.7)))
-      .overlay(Circle().stroke(theme.foreground.opacity(0.65), lineWidth: filled ? 0 : 1))
+      .background(Circle().fill(filled ? theme.foreground : theme.background.opacity(0.001)))
+      .overlay(Circle().stroke(theme.muted.opacity(0.24), lineWidth: filled ? 0 : 1))
       .scaleEffect(configuration.isPressed ? 0.9 : 1)
       .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }

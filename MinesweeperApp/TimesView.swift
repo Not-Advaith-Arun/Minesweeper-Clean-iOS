@@ -9,32 +9,33 @@ struct TimesView: View {
     let theme = store.theme
     ZStack {
       ReplicaBackground(theme: theme)
-      VStack(spacing: 14) {
+      VStack(spacing: 20) {
         DifficultyTabs(selection: $difficulty)
-          .padding(.top, 8)
+          .padding(.top, 26)
 
         let records = store.records(for: difficulty)
         if records.isEmpty {
           Spacer()
-          VStack(spacing: 12) {
+          VStack(spacing: 14) {
             Image(systemName: "stopwatch")
-              .font(.system(size: 38, weight: .light))
+              .font(.system(size: 42, weight: .ultraLight))
+              .foregroundStyle(theme.foreground.opacity(0.54))
             Text("No times yet")
-              .font(.rubik(18, weight: .medium))
+              .font(.rubik(20, weight: .regular))
             Text("Complete a \(difficulty.title.lowercased()) game to set your first time.")
               .font(.rubik(13))
-              .foregroundStyle(theme.muted)
+              .foregroundStyle(theme.muted.opacity(0.84))
               .multilineTextAlignment(.center)
           }
-          .foregroundStyle(theme.foreground)
+          .foregroundStyle(theme.foreground.opacity(0.78))
           .padding(.horizontal, 42)
           Spacer()
         } else {
           List {
             ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
               TimeRow(rank: index + 1, record: record)
-                .listRowBackground(theme.surface)
-                .listRowSeparatorTint(theme.muted.opacity(0.18))
+                .listRowBackground(theme.background)
+                .listRowSeparatorTint(theme.muted.opacity(0.14))
                 .swipeActions {
                   Button(role: .destructive) {
                     pendingDeletion = record
@@ -46,6 +47,7 @@ struct TimesView: View {
           }
           .scrollContentBackground(.hidden)
           .listStyle(.plain)
+          .padding(.horizontal, 14)
         }
       }
     }
@@ -86,13 +88,21 @@ private struct DifficultyTabs: View {
             Text(difficulty.title)
               .font(.rubik(12, weight: .medium))
               .foregroundStyle(
-                selection == difficulty ? store.theme.background : store.theme.foreground
+                selection == difficulty
+                  ? store.theme.background : store.theme.foreground.opacity(0.78)
               )
               .padding(.horizontal, 15)
-              .frame(height: 34)
+              .frame(height: 36)
               .background(
                 Capsule().fill(
-                  selection == difficulty ? store.theme.foreground : store.theme.surface))
+                  selection == difficulty
+                    ? store.theme.foreground : store.theme.background.opacity(0.001)))
+              .overlay {
+                Capsule()
+                  .stroke(
+                    store.theme.muted.opacity(selection == difficulty ? 0 : 0.24),
+                    lineWidth: ReplicaMetrics.thinStroke)
+              }
           }
           .buttonStyle(.plain)
         }
@@ -117,17 +127,17 @@ private struct TimeRow: View {
   var body: some View {
     HStack(spacing: 14) {
       Text("\(rank)")
-        .font(.rubik(13, weight: .semibold))
+        .font(.rubik(13, weight: .regular))
         .foregroundStyle(store.theme.muted)
         .frame(width: 25)
       Text(record.seconds.clockString)
-        .font(.system(size: 20, weight: .medium, design: .monospaced))
-        .foregroundStyle(store.theme.foreground)
+        .font(.system(size: 20, weight: .regular, design: .monospaced))
+        .foregroundStyle(store.theme.foreground.opacity(0.82))
       Spacer()
       Text(Self.dateFormatter.string(from: record.date))
         .font(.rubik(11))
-        .foregroundStyle(store.theme.muted)
+        .foregroundStyle(store.theme.muted.opacity(0.84))
     }
-    .padding(.vertical, 8)
+    .padding(.vertical, 11)
   }
 }

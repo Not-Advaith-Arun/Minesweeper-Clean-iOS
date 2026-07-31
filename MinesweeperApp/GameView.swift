@@ -22,57 +22,39 @@ struct GameView: View {
     let theme = store.theme
     ZStack {
       ReplicaBackground(theme: theme)
-      VStack(spacing: 0) {
-        GameStatusBar(
-          session: session,
-          paletteExpanded: $paletteExpanded,
-          onClose: { leaveGame() }
-        )
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-
-        if paletteExpanded {
-          QuickThemeBar(isExpanded: $paletteExpanded)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 5)
-            .transition(.move(edge: .top).combined(with: .opacity))
+      BoardRenderer(
+        board: session.board,
+        phase: session.phase,
+        isLoading: session.isLoading,
+        changedCoordinates: session.lastChangedCoordinates,
+        actionCoordinate: session.lastActionCoordinate,
+        theme: theme,
+        showsBorders: store.settings.cellBorders,
+        longPressEnabled: store.settings.longPressEnabled,
+        longPressDuration: store.settings.longPressDelayMilliseconds / 1_000,
+        onTap: { column, row in
+          session.primaryAction(column: column, row: row)
+        },
+        onLongPress: { column, row in
+          session.secondaryAction(column: column, row: row)
         }
+      )
+      .ignoresSafeArea()
+      .accessibilityLabel("\(difficulty.title) minesweeper board")
+      .accessibilityIdentifier("game.board")
 
-        BoardRenderer(
-          board: session.board,
-          theme: theme,
-          showsBorders: store.settings.cellBorders,
-          longPressEnabled: store.settings.longPressEnabled,
-          longPressDuration: store.settings.longPressDelayMilliseconds / 1_000,
-          onTap: { column, row in
-            session.primaryAction(column: column, row: row)
-          },
-          onLongPress: { column, row in
-            session.secondaryAction(column: column, row: row)
-          }
-        )
-        .accessibilityLabel("\(difficulty.title) minesweeper board")
-        .accessibilityIdentifier("game.board")
-      }
+      GameStatusBar(
+        session: session,
+        paletteExpanded: $paletteExpanded,
+        onClose: { leaveGame() }
+      )
 
       if store.settings.showActionToggle || !store.settings.longPressEnabled {
         VStack {
           Spacer()
-          HStack {
-            Spacer()
-            ActionToggle(session: session)
-          }
+          ActionToggle(session: session)
         }
-        .padding(.trailing, 17)
-        .padding(.bottom, 17)
-      }
-
-      if session.isLoading {
-        ProgressView()
-          .tint(theme.foreground)
-          .padding(13)
-          .background(Circle().fill(theme.surface.opacity(0.88)))
-          .allowsHitTesting(false)
+        .padding(.bottom, 20)
       }
 
       if showResult, session.phase.isFinished {
@@ -156,66 +138,71 @@ private struct GameStatusBar: View {
   let onClose: () -> Void
 
   var body: some View {
-    HStack(spacing: 7) {
-      Button(action: onClose) {
-        Image(systemName: "chevron.left")
-          .font(.system(size: 16, weight: .semibold))
-          .frame(width: 32, height: 32)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Back")
-      .accessibilityIdentifier("game.back")
+    VStack(spacing: 0) {
+      ZStack(alignment: .top) {
+        HStack {
+          Button(action: onClose) {
+            Image(systemName: "chevron.left")
+              .font(.system(size: 32, weight: .regular))
+              .frame(width: 54, height: 54)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Back")
+          .accessibilityIdentifier("game.back")
 
-      Text(session.difficulty.title)
-        .font(.rubik(13, weight: .medium))
-        .lineLimit(1)
+          Spacer()
 
-      Spacer(minLength: 4)
-
-      CounterBadge(
-        symbol: "gearshape.fill", value: "\(session.remainingMineCount)", identifier: "game.mines")
-
-      TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-        CounterBadge(
-          symbol: "timer", value: session.elapsedSeconds.clockString, identifier: "game.timer")
-      }
-
-      Button {
-        withAnimation(ReplicaMotion.spring(speedPercent: store.settings.animationSpeed)) {
-          paletteExpanded.toggle()
+          Button {
+            withAnimation(ReplicaMotion.spring(speedPercent: store.settings.animationSpeed)) {
+              paletteExpanded.toggle()
+            }
+          } label: {
+            Image(systemName: "paintpalette.fill")
+              .font(.system(size: 29, weight: .semibold))
+              .frame(width: 56, height: 56)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Theme picker")
         }
-      } label: {
-        Image(systemName: "paintpalette.fill")
-          .font(.system(size: 16, weight: .semibold))
-          .frame(width: 33, height: 33)
-          .background(Circle().fill(store.theme.accent))
-          .foregroundStyle(store.theme.background)
+        .padding(.horizontal, 18)
+        .padding(.top, 9)
+
+        VStack(spacing: 1) {
+          HStack(spacing: 6) {
+            MineLogo(theme: store.theme, size: 23)
+            Text("\(session.remainingMineCount)")
+              .font(.rubik(18, weight: .regular))
+              .monospacedDigit()
+              .accessibilityIdentifier("game.mines")
+          }
+          .frame(height: 27)
+
+          TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            Text(session.elapsedSeconds == 0 ? "" : gameTimeString(session.elapsedSeconds))
+              .font(.rubik(14, weight: .regular))
+              .monospacedDigit()
+              .accessibilityIdentifier("game.timer")
+          }
+          .frame(height: 18)
+        }
+        .padding(.top, 14)
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Theme picker")
+      .frame(height: 76)
+
+      if paletteExpanded {
+        QuickThemeBar(isExpanded: $paletteExpanded)
+          .padding(.horizontal, 12)
+          .transition(.move(edge: .top).combined(with: .opacity))
+      }
+
+      Spacer()
     }
     .foregroundStyle(store.theme.foreground)
+    .ignoresSafeArea(edges: .bottom)
   }
-}
 
-private struct CounterBadge: View {
-  @Environment(AppStore.self) private var store
-  let symbol: String
-  let value: String
-  let identifier: String
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Image(systemName: symbol).font(.system(size: 11, weight: .medium))
-      Text(value)
-        .font(.system(size: 12, weight: .medium, design: .monospaced))
-        .monospacedDigit()
-        .accessibilityIdentifier(identifier)
-    }
-    .padding(.horizontal, 8)
-    .frame(height: 31)
-    .background(Capsule().fill(store.theme.surface.opacity(0.78)))
-    .overlay(Capsule().stroke(store.theme.muted.opacity(0.2), lineWidth: 1))
+  private func gameTimeString(_ seconds: Int) -> String {
+    seconds < 60 ? "\(seconds)S" : seconds.clockString
   }
 }
 
@@ -225,28 +212,39 @@ private struct ActionToggle: View {
   let session: GameSessionController
 
   var body: some View {
+    HStack(spacing: 0) {
+      actionButton(.dig)
+      actionButton(.flag)
+    }
+    .padding(5)
+    .background(
+      Capsule(style: .continuous)
+        .fill(store.theme.background.opacity(0.94))
+        .overlay(Capsule().stroke(store.theme.separator.opacity(0.9), lineWidth: 1))
+    )
+    .accessibilityIdentifier("game.actionToggle")
+  }
+
+  private func actionButton(_ mode: PrimaryAction) -> some View {
     Button {
-      session.toggleActionMode()
-      store.haptic(.selection)
-    } label: {
-      ZStack {
-        Capsule(style: .continuous)
-          .fill(store.theme.foreground)
-          .frame(width: 58, height: 86)
-        VStack(spacing: 7) {
-          Image(systemName: session.actionMode.symbol)
-            .font(.system(size: 22, weight: .semibold))
-          Text(session.actionMode.title.uppercased())
-            .font(.rubik(9, weight: .bold))
-            .tracking(0.6)
-        }
-        .foregroundStyle(store.theme.background)
+      if session.actionMode != mode {
+        session.setActionMode(mode)
+        store.haptic(.selection)
       }
-      .shadow(color: .black.opacity(0.18), radius: 9, y: 4)
+    } label: {
+      Image(systemName: mode == .dig ? "gearshape.fill" : "flag.fill")
+        .font(.system(size: 25, weight: .semibold))
+        .frame(width: 52, height: 52)
+        .foregroundStyle(session.actionMode == mode ? store.theme.background : store.theme.foreground)
+        .background {
+          if session.actionMode == mode {
+            Circle().fill(store.theme.covered)
+          }
+        }
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("Current action: \(session.actionMode.title). Tap to switch.")
-    .accessibilityIdentifier("game.actionToggle")
+    .accessibilityLabel(mode.title)
+    .accessibilityAddTraits(session.actionMode == mode ? .isSelected : [])
   }
 }
 

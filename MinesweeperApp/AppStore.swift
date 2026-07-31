@@ -26,7 +26,7 @@ final class AppStore {
     self.defaults = defaults
     self.selectedDifficulty =
       defaults.string(forKey: AppConstants.difficultyStorageKey)
-      .flatMap(ReplicaDifficulty.init(rawValue:)) ?? .medium
+      .flatMap(ReplicaDifficulty.init(rawValue:)) ?? .beginner
     self.settings =
       Self.decode(UserSettings.self, key: AppConstants.settingsStorageKey, defaults: defaults)
       ?? .default

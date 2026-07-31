@@ -1,8 +1,13 @@
 import SwiftUI
 import UIKit
+import MinesweeperCore
 
 struct BoardRenderer: UIViewRepresentable {
   let board: BoardPresentation
+  let phase: ReplicaGamePhase
+  let isLoading: Bool
+  let changedCoordinates: Set<CellCoordinate>
+  let actionCoordinate: CellCoordinate?
   let theme: AppTheme
   let showsBorders: Bool
   let longPressEnabled: Bool
@@ -24,6 +29,10 @@ struct BoardRenderer: UIViewRepresentable {
     viewport.canvas.longPressRecognizer.minimumPressDuration = longPressDuration
     viewport.update(
       board: board,
+      phase: phase,
+      isLoading: isLoading,
+      changedCoordinates: changedCoordinates,
+      actionCoordinate: actionCoordinate,
       palette: BoardPalette(theme: theme),
       showsBorders: showsBorders
     )
@@ -59,7 +68,9 @@ struct BoardPalette {
 final class BoardViewport: UIScrollView, UIScrollViewDelegate {
   let canvas = BoardCanvasView()
   private var lastGridSize = CGSize.zero
+  private var lastPhase: ReplicaGamePhase = .ready
   private var hasAppliedInitialZoom = false
+  private var pendingFocusCoordinate: CellCoordinate?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -77,7 +88,15 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
 
   required init?(coder: NSCoder) { nil }
 
-  func update(board: BoardPresentation, palette: BoardPalette, showsBorders: Bool) {
+  func update(
+    board: BoardPresentation,
+    phase: ReplicaGamePhase,
+    isLoading: Bool,
+    changedCoordinates: Set<CellCoordinate>,
+    actionCoordinate: CellCoordinate?,
+    palette: BoardPalette,
+    showsBorders: Bool
+  ) {
     let gridSize = CGSize(
       width: CGFloat(board.columns) * BoardCanvasView.baseCellSize,
       height: CGFloat(board.rows) * BoardCanvasView.baseCellSize
@@ -88,7 +107,18 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       contentSize = gridSize
       hasAppliedInitialZoom = false
     }
-    canvas.update(board: board, palette: palette, showsBorders: showsBorders)
+    if lastPhase == .ready, phase == .playing {
+      pendingFocusCoordinate = actionCoordinate
+    }
+    lastPhase = phase
+    canvas.update(
+      board: board,
+      phase: phase,
+      isLoading: isLoading,
+      changedCoordinates: changedCoordinates,
+      palette: palette,
+      showsBorders: showsBorders
+    )
     setNeedsLayout()
   }
 
@@ -99,7 +129,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     let fitHeight = bounds.height / lastGridSize.height
     let fit = min(fitWidth, fitHeight)
     minimumZoomScale = min(fit, fitWidth)
-    maximumZoomScale = max(minimumZoomScale, 3.5)
+    maximumZoomScale = max(minimumZoomScale, 4.0)
     if !hasAppliedInitialZoom {
       zoomScale = minimumZoomScale
       hasAppliedInitialZoom = true
@@ -107,6 +137,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       zoomScale = minimumZoomScale
     }
     centerContent()
+    applyPendingFocusIfNeeded()
   }
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { canvas }
@@ -119,16 +150,52 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     contentInset = UIEdgeInsets(
       top: vertical, left: horizontal, bottom: vertical, right: horizontal)
   }
+
+  private func applyPendingFocusIfNeeded() {
+    guard let coordinate = pendingFocusCoordinate, bounds.width > 0, bounds.height > 0 else { return }
+    pendingFocusCoordinate = nil
+    let targetZoom = max(minimumZoomScale, min(maximumZoomScale, 1.38))
+    let center = CGPoint(
+      x: (CGFloat(coordinate.column) + 0.5) * BoardCanvasView.baseCellSize,
+      y: (CGFloat(coordinate.row) + 0.5) * BoardCanvasView.baseCellSize
+    )
+    DispatchQueue.main.async {
+      self.setZoomScale(targetZoom, animated: true)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        let size = self.bounds.size
+        let offset = CGPoint(
+          x: center.x * self.zoomScale - size.width / 2,
+          y: center.y * self.zoomScale - size.height / 2
+        )
+        self.setContentOffset(self.boundedOffset(offset), animated: true)
+      }
+    }
+  }
+
+  private func boundedOffset(_ offset: CGPoint) -> CGPoint {
+    let minX = -contentInset.left
+    let minY = -contentInset.top
+    let maxX = max(minX, contentSize.width - bounds.width + contentInset.right)
+    let maxY = max(minY, contentSize.height - bounds.height + contentInset.bottom)
+    return CGPoint(
+      x: min(max(offset.x, minX), maxX),
+      y: min(max(offset.y, minY), maxY)
+    )
+  }
 }
 
 final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
-  static let baseCellSize: CGFloat = 28
+  static let baseCellSize: CGFloat = 44
 
   var onTap: ((Int, Int) -> Void)?
   var onLongPress: ((Int, Int) -> Void)?
   private var board = BoardPresentation(columns: 1, rows: 1)
+  private var phase: ReplicaGamePhase = .ready
+  private var isLoading = false
   private var palette = BoardPalette(theme: ThemeCatalog.fallback)
   private var showsBorders = false
+  private var revealStartedAt: [Int: CFTimeInterval] = [:]
+  private var displayLink: CADisplayLink?
 
   lazy var longPressRecognizer: UILongPressGestureRecognizer = {
     let recognizer = UILongPressGestureRecognizer(
@@ -160,11 +227,31 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
 
   required init?(coder: NSCoder) { nil }
 
-  func update(board: BoardPresentation, palette: BoardPalette, showsBorders: Bool) {
+  func update(
+    board: BoardPresentation,
+    phase: ReplicaGamePhase,
+    isLoading: Bool,
+    changedCoordinates: Set<CellCoordinate>,
+    palette: BoardPalette,
+    showsBorders: Bool
+  ) {
+    let oldBoard = self.board
     self.board = board
+    self.phase = phase
+    self.isLoading = isLoading
     self.palette = palette
     self.showsBorders = showsBorders
+    let now = CACurrentMediaTime()
+    for coordinate in changedCoordinates {
+      let index = coordinate.row * board.columns + coordinate.column
+      guard board.cells.indices.contains(index) else { continue }
+      if oldBoard.cells.indices.contains(index), oldBoard.cells[index] != board.cells[index] {
+        revealStartedAt[index] =
+          now + min(0.32, Double(abs(coordinate.row) + abs(coordinate.column)) * 0.012)
+      }
+    }
     accessibilityLabel = "Minesweeper board, \(board.columns) columns by \(board.rows) rows"
+    maintainDisplayLink()
     setNeedsDisplay()
   }
 
@@ -172,6 +259,11 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     guard let context = UIGraphicsGetCurrentContext() else { return }
     context.setFillColor(palette.background.cgColor)
     context.fill(rect)
+
+    if phase == .ready {
+      drawReadyBoard(in: bounds)
+      return
+    }
 
     let firstColumn = max(0, Int(floor(rect.minX / Self.baseCellSize)))
     let lastColumn = min(board.columns - 1, Int(ceil(rect.maxX / Self.baseCellSize)))
@@ -193,19 +285,22 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       width: Self.baseCellSize,
       height: Self.baseCellSize
     )
-    let inset = showsBorders ? rect.insetBy(dx: 0.55, dy: 0.55) : rect
+    let inset = showsBorders ? rect.insetBy(dx: 0.55, dy: 0.55) : rect.insetBy(dx: 0.65, dy: 0.65)
+    let radius = showsBorders ? 0 : max(5, Self.baseCellSize * 0.13)
+    let revealScale = animationScale(for: row * board.columns + column)
 
     switch cell {
     case .covered:
-      context.setFillColor(palette.covered.cgColor)
-      context.fill(inset)
+      palette.covered.setFill()
+      UIBezierPath(roundedRect: inset, cornerRadius: radius).fill()
     case .revealed(let count):
       context.setFillColor(palette.surface.cgColor)
       context.fill(rect)
-      if count > 0 { drawNumber(count, in: rect) }
+      drawGridLine(in: rect, context: context)
+      if count > 0 { drawNumber(count, in: rect, scale: revealScale) }
     case .flagged:
-      context.setFillColor(palette.flagged.cgColor)
-      context.fill(inset)
+      palette.flagged.setFill()
+      UIBezierPath(roundedRect: inset, cornerRadius: radius).fill()
       drawFlag(in: rect, color: palette.foreground)
     case .mine(let triggered):
       context.setFillColor((triggered ? palette.mine : palette.background).cgColor)
@@ -218,6 +313,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     case .wrongFlag:
       context.setFillColor(palette.surface.cgColor)
       context.fill(rect)
+      drawGridLine(in: rect, context: context)
       drawFlag(in: rect, color: palette.muted)
       drawCross(in: rect)
     }
@@ -229,12 +325,43 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     }
   }
 
-  private func drawNumber(_ number: Int, in rect: CGRect) {
+  private func drawReadyBoard(in rect: CGRect) {
+    let boardRect = rect.insetBy(dx: Self.baseCellSize * 0.35, dy: Self.baseCellSize * 0.55)
+    palette.covered.setFill()
+    UIBezierPath(roundedRect: boardRect, cornerRadius: Self.baseCellSize * 0.72).fill()
+
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont(name: "Rubik-Regular", size: Self.baseCellSize * 0.52)
+        ?? UIFont.systemFont(ofSize: Self.baseCellSize * 0.52, weight: .regular),
+      .foregroundColor: palette.foreground.withAlphaComponent(0.42),
+    ]
+    let string = NSString(string: isLoading ? "Preparing..." : "Tap to begin.")
+    let size = string.size(withAttributes: attributes)
+    string.draw(
+      at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+      withAttributes: attributes
+    )
+  }
+
+  private func drawGridLine(in rect: CGRect, context: CGContext) {
+    context.saveGState()
+    context.setStrokeColor(palette.separator.withAlphaComponent(0.23).cgColor)
+    context.setLineWidth(1.15)
+    let gap = Self.baseCellSize * 0.22
+    context.move(to: CGPoint(x: rect.minX + gap, y: rect.maxY - 0.5))
+    context.addLine(to: CGPoint(x: rect.maxX - gap, y: rect.maxY - 0.5))
+    context.move(to: CGPoint(x: rect.maxX - 0.5, y: rect.minY + gap))
+    context.addLine(to: CGPoint(x: rect.maxX - 0.5, y: rect.maxY - gap))
+    context.strokePath()
+    context.restoreGState()
+  }
+
+  private func drawNumber(_ number: Int, in rect: CGRect, scale: CGFloat) {
     let color =
       palette.clues.indices.contains(number - 1) ? palette.clues[number - 1] : palette.foreground
     let attributes: [NSAttributedString.Key: Any] = [
-      .font: UIFont(name: "Rubik-Medium", size: Self.baseCellSize * 0.56)
-        ?? UIFont.systemFont(ofSize: Self.baseCellSize * 0.56, weight: .medium),
+      .font: UIFont(name: "Rubik-Regular", size: Self.baseCellSize * 0.58 * scale)
+        ?? UIFont.systemFont(ofSize: Self.baseCellSize * 0.58 * scale, weight: .regular),
       .foregroundColor: color,
     ]
     let string = NSString(string: "\(number)")
@@ -243,6 +370,31 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
       withAttributes: attributes
     )
+  }
+
+  private func animationScale(for index: Int) -> CGFloat {
+    guard let start = revealStartedAt[index] else { return 1 }
+    let elapsed = CACurrentMediaTime() - start
+    if elapsed < 0 { return 0.01 }
+    let progress = min(1, elapsed / 0.18)
+    return 0.72 + CGFloat(progress) * 0.28
+  }
+
+  private func maintainDisplayLink() {
+    let now = CACurrentMediaTime()
+    revealStartedAt = revealStartedAt.filter { now - $0.value < 0.35 }
+    if revealStartedAt.isEmpty {
+      displayLink?.invalidate()
+      displayLink = nil
+    } else if displayLink == nil {
+      displayLink = CADisplayLink(target: self, selector: #selector(animationTick))
+      displayLink?.add(to: .main, forMode: .common)
+    }
+  }
+
+  @objc private func animationTick() {
+    maintainDisplayLink()
+    setNeedsDisplay()
   }
 
   private func drawFlag(in rect: CGRect, color: UIColor) {

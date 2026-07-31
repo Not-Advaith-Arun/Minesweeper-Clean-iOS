@@ -289,15 +289,17 @@ enum ThemeCatalog {
     // Android generates these from the device palette. Stable local equivalents
     // keep the private iOS build deterministic and offline.
     .init(
-      id: "material_you", name: "Material You", background: 0xF9F0FA, surface: 0xFFF7FF,
-      covered: 0xE1BEE7, accent: 0x7A4E7D, foreground: 0x211A21, muted: 0x776D77),
+      id: "material_you", name: "Material You", background: 0xFFFFFF, surface: 0xFFFFFF,
+      covered: 0x8194CF, accent: 0x8194CF, foreground: 0x777A82, muted: 0x9DA0A7,
+      mine: 0xD86E6E,
+      clues: [0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82]),
     .init(
       id: "material_you_amoled", name: "Material You Amoled", background: 0x000000,
       surface: 0x090909, covered: 0x3B273D, accent: 0xD7B8D9, foreground: 0xF7EEF7, muted: 0x9E949E,
       isAMOLED: true),
   ]
 
-  static let fallback = all[14]  // Pink Amoled, matching the supplied reference.
+  static let fallback = all[30]  // Material You, matching a fresh Android emulator install.
   static func theme(id: String) -> AppTheme { all.first { $0.id == id } ?? fallback }
 }
 

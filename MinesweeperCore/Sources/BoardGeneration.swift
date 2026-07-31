@@ -489,3 +489,50 @@ public struct NoGuessBoardGenerator: BoardGenerating, Sendable {
     return [chebyshev, manhattan, squaredEuclidean]
   }
 }
+
+/// Fast personal-play generator used by the iOS replica app to match the Android app's
+/// immediate first tap. It preserves first-tap and neighbor safety but does not run the
+/// no-guess verifier, so board materialization is effectively instant on device.
+public struct FastBoardGenerator: BoardGenerating, Sendable {
+  public var protectsFirstRevealNeighbors: Bool
+
+  public init(protectsFirstRevealNeighbors: Bool = true) {
+    self.protectsFirstRevealNeighbors = protectsFirstRevealNeighbors
+  }
+
+  public func generate(
+    configuration: BoardConfiguration,
+    firstReveal: CellCoordinate,
+    seed: UInt64
+  ) throws -> GeneratedBoard {
+    guard configuration.contains(firstReveal) else { throw BoardGenerationError.invalidFirstReveal }
+
+    var protected: Set<CellCoordinate> = [firstReveal]
+    if protectsFirstRevealNeighbors {
+      protected.formUnion(configuration.neighbors(of: firstReveal))
+    }
+
+    var candidates = allCoordinates(in: configuration).filter { !protected.contains($0) }
+    if candidates.count < configuration.mineCount {
+      protected = [firstReveal]
+      candidates = allCoordinates(in: configuration).filter { !protected.contains($0) }
+      guard candidates.count >= configuration.mineCount else {
+        throw BoardGenerationError.insufficientUnprotectedCells
+      }
+    }
+
+    var random = SplitMix64(seed: seed)
+    for index in stride(from: candidates.count - 1, through: 1, by: -1) {
+      candidates.swapAt(index, random.next(upperBound: index + 1))
+    }
+    return GeneratedBoard(
+      configuration: configuration,
+      seed: seed,
+      mines: Set(candidates.prefix(configuration.mineCount))
+    )
+  }
+
+  private func allCoordinates(in configuration: BoardConfiguration) -> [CellCoordinate] {
+    (0..<configuration.cellCount).compactMap(configuration.coordinate)
+  }
+}

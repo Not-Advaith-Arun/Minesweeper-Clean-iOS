@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ThemeLibraryView: View {
   @Environment(AppStore.self) private var store
-  private let columns = [GridItem(.adaptive(minimum: 140), spacing: 12)]
+  private let columns = [GridItem(.adaptive(minimum: 148), spacing: 14)]
 
   var body: some View {
     let theme = store.theme
@@ -20,7 +20,9 @@ struct ThemeLibraryView: View {
             .accessibilityIdentifier("theme.\(candidate.id)")
           }
         }
-        .padding(16)
+        .padding(.horizontal, 28)
+        .padding(.top, 28)
+        .padding(.bottom, 42)
         .animation(
           ReplicaMotion.standard(speedPercent: store.settings.animationSpeed), value: store.themeID)
       }
@@ -37,31 +39,31 @@ private struct ThemeCard: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      ThemeSwatch(theme: theme, selected: selected)
+      ThemeSwatch(theme: theme, selected: selected, compact: true)
       VStack(alignment: .leading, spacing: 3) {
         Text(theme.name)
-          .font(.rubik(13, weight: .medium))
-          .foregroundStyle(theme.foreground)
+          .font(.rubik(14, weight: .regular))
+          .foregroundStyle(theme.foreground.opacity(0.84))
           .lineLimit(2)
         if theme.isAMOLED {
           Text("AMOLED")
             .font(.rubik(9, weight: .semibold))
-            .tracking(0.7)
             .foregroundStyle(theme.muted)
         }
       }
       Spacer(minLength: 0)
       if selected {
         Image(systemName: "checkmark")
-          .font(.system(size: 12, weight: .bold))
+          .font(.system(size: 13, weight: .regular))
           .foregroundStyle(theme.accent)
       }
     }
-    .padding(12)
-    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(theme.surface))
+    .padding(.horizontal, 14)
+    .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.background))
     .overlay(
-      RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(
-        selected ? theme.accent : theme.muted.opacity(0.2), lineWidth: selected ? 2 : 1))
+      RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(
+        selected ? theme.accent.opacity(0.68) : theme.muted.opacity(0.18),
+        lineWidth: ReplicaMetrics.thinStroke))
   }
 }
