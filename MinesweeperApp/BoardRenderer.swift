@@ -10,6 +10,7 @@ struct BoardRenderer: UIViewRepresentable {
   let actionCoordinate: CellCoordinate?
   let theme: AppTheme
   let showsBorders: Bool
+  let animationSpeed: Double
   let longPressEnabled: Bool
   let longPressDuration: TimeInterval
   let onTap: (Int, Int) -> Void
@@ -34,7 +35,8 @@ struct BoardRenderer: UIViewRepresentable {
       changedCoordinates: changedCoordinates,
       actionCoordinate: actionCoordinate,
       palette: BoardPalette(theme: theme),
-      showsBorders: showsBorders
+      showsBorders: showsBorders,
+      animationSpeed: animationSpeed
     )
   }
 }
@@ -95,7 +97,8 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     changedCoordinates: Set<CellCoordinate>,
     actionCoordinate: CellCoordinate?,
     palette: BoardPalette,
-    showsBorders: Bool
+    showsBorders: Bool,
+    animationSpeed: Double
   ) {
     let gridSize = CGSize(
       width: CGFloat(board.columns) * BoardCanvasView.baseCellSize,
@@ -116,8 +119,10 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       phase: phase,
       isLoading: isLoading,
       changedCoordinates: changedCoordinates,
+      actionCoordinate: actionCoordinate,
       palette: palette,
-      showsBorders: showsBorders
+      showsBorders: showsBorders,
+      animationSpeed: animationSpeed
     )
     setNeedsLayout()
   }
@@ -194,6 +199,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   private var isLoading = false
   private var palette = BoardPalette(theme: ThemeCatalog.fallback)
   private var showsBorders = false
+  private var animationSpeed = 100.0
   private var revealStartedAt: [Int: CFTimeInterval] = [:]
   private var displayLink: CADisplayLink?
 
@@ -232,8 +238,10 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     phase: ReplicaGamePhase,
     isLoading: Bool,
     changedCoordinates: Set<CellCoordinate>,
+    actionCoordinate: CellCoordinate?,
     palette: BoardPalette,
-    showsBorders: Bool
+    showsBorders: Bool,
+    animationSpeed: Double
   ) {
     let oldBoard = self.board
     self.board = board
@@ -241,13 +249,19 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     self.isLoading = isLoading
     self.palette = palette
     self.showsBorders = showsBorders
+    self.animationSpeed = animationSpeed
     let now = CACurrentMediaTime()
+    let distanceScale = Self.durationScale(for: animationSpeed)
     for coordinate in changedCoordinates {
       let index = coordinate.row * board.columns + coordinate.column
       guard board.cells.indices.contains(index) else { continue }
       if oldBoard.cells.indices.contains(index), oldBoard.cells[index] != board.cells[index] {
+        let distance =
+          actionCoordinate.map {
+            max(abs(coordinate.row - $0.row), abs(coordinate.column - $0.column))
+          } ?? 0
         revealStartedAt[index] =
-          now + min(0.32, Double(abs(coordinate.row) + abs(coordinate.column)) * 0.012)
+          now + min(0.26, Double(distance) * 0.014 * distanceScale)
       }
     }
     accessibilityLabel = "Minesweeper board, \(board.columns) columns by \(board.rows) rows"
@@ -285,22 +299,25 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       width: Self.baseCellSize,
       height: Self.baseCellSize
     )
-    let inset = showsBorders ? rect.insetBy(dx: 0.55, dy: 0.55) : rect.insetBy(dx: 0.65, dy: 0.65)
-    let radius = showsBorders ? 0 : max(5, Self.baseCellSize * 0.13)
-    let revealScale = animationScale(for: row * board.columns + column)
+    let index = row * board.columns + column
+    let inset = showsBorders ? rect.insetBy(dx: 0.55, dy: 0.55) : rect
+    let radius = showsBorders ? 0 : 0
+    let progress = revealProgress(for: index)
+    let revealScale = numberScale(for: progress)
 
     switch cell {
     case .covered:
       palette.covered.setFill()
-      UIBezierPath(roundedRect: inset, cornerRadius: radius).fill()
+      fillCoveredCell(inset, radius: radius)
     case .revealed(let count):
       context.setFillColor(palette.surface.cgColor)
       context.fill(rect)
       drawGridLine(in: rect, context: context)
       if count > 0 { drawNumber(count, in: rect, scale: revealScale) }
+      drawClearingOverlay(in: rect, progress: progress)
     case .flagged:
       palette.flagged.setFill()
-      UIBezierPath(roundedRect: inset, cornerRadius: radius).fill()
+      fillCoveredCell(inset, radius: radius)
       drawFlag(in: rect, color: palette.foreground)
     case .mine(let triggered):
       context.setFillColor((triggered ? palette.mine : palette.background).cgColor)
@@ -356,6 +373,35 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     context.restoreGState()
   }
 
+  private func fillCoveredCell(_ rect: CGRect, radius: CGFloat) {
+    if radius > 0 {
+      UIBezierPath(roundedRect: rect, cornerRadius: radius).fill()
+    } else {
+      UIRectFill(rect)
+    }
+  }
+
+  private func drawClearingOverlay(in rect: CGRect, progress: CGFloat) {
+    guard progress < 1, progress > 0 else { return }
+    guard let context = UIGraphicsGetCurrentContext() else { return }
+    let eased = Self.easeOutCubic(progress)
+    let scale = max(0.08, 1 - eased * 0.78)
+    let alpha = max(0, 1 - eased)
+    let width = rect.width * scale
+    let height = rect.height * scale
+    let overlay = CGRect(
+      x: rect.midX - width / 2,
+      y: rect.midY - height / 2,
+      width: width,
+      height: height
+    )
+    context.saveGState()
+    context.setAlpha(alpha)
+    palette.covered.setFill()
+    UIBezierPath(roundedRect: overlay, cornerRadius: rect.width * 0.11 * scale).fill()
+    context.restoreGState()
+  }
+
   private func drawNumber(_ number: Int, in rect: CGRect, scale: CGFloat) {
     let color =
       palette.clues.indices.contains(number - 1) ? palette.clues[number - 1] : palette.foreground
@@ -372,17 +418,23 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     )
   }
 
-  private func animationScale(for index: Int) -> CGFloat {
+  private func revealProgress(for index: Int) -> CGFloat {
     guard let start = revealStartedAt[index] else { return 1 }
     let elapsed = CACurrentMediaTime() - start
-    if elapsed < 0 { return 0.01 }
-    let progress = min(1, elapsed / 0.18)
-    return 0.72 + CGFloat(progress) * 0.28
+    if elapsed < 0 { return 0 }
+    let duration = 0.2 * Self.durationScale(for: animationSpeed)
+    return CGFloat(min(1, elapsed / duration))
+  }
+
+  private func numberScale(for progress: CGFloat) -> CGFloat {
+    guard progress < 1 else { return 1 }
+    return 0.72 + Self.easeOutCubic(progress) * 0.28
   }
 
   private func maintainDisplayLink() {
     let now = CACurrentMediaTime()
-    revealStartedAt = revealStartedAt.filter { now - $0.value < 0.35 }
+    let retention = 0.62 * Self.durationScale(for: animationSpeed)
+    revealStartedAt = revealStartedAt.filter { now - $0.value < retention }
     if revealStartedAt.isEmpty {
       displayLink?.invalidate()
       displayLink = nil
@@ -390,6 +442,17 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       displayLink = CADisplayLink(target: self, selector: #selector(animationTick))
       displayLink?.add(to: .main, forMode: .common)
     }
+  }
+
+  private static func durationScale(for speedPercent: Double) -> Double {
+    guard speedPercent > 0 else { return 0.01 }
+    return 100 / min(150, max(5, speedPercent))
+  }
+
+  private static func easeOutCubic(_ value: CGFloat) -> CGFloat {
+    let clamped = min(1, max(0, value))
+    let inverse = 1 - clamped
+    return 1 - inverse * inverse * inverse
   }
 
   @objc private func animationTick() {

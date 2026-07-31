@@ -30,6 +30,7 @@
       actionCoordinate: nil,
       theme: ThemeCatalog.fallback,
       showsBorders: true,
+      animationSpeed: 100,
       longPressEnabled: true,
       longPressDuration: 0.3,
       onTap: { _, _ in },

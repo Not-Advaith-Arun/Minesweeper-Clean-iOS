@@ -30,6 +30,7 @@ struct GameView: View {
         actionCoordinate: session.lastActionCoordinate,
         theme: theme,
         showsBorders: store.settings.cellBorders,
+        animationSpeed: store.settings.animationSpeed,
         longPressEnabled: store.settings.longPressEnabled,
         longPressDuration: store.settings.longPressDelayMilliseconds / 1_000,
         onTap: { column, row in

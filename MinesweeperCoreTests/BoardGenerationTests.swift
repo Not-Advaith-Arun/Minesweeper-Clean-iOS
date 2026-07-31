@@ -117,6 +117,34 @@ final class BoardGenerationTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(boardsWithNearbyMines.count, 4)
   }
 
+  func testThreeBVCountsOpeningsAndIsolatedNumbers() {
+    let configuration = BoardConfiguration(width: 4, height: 4, mineCount: 1)
+    let board = GeneratedBoard(
+      configuration: configuration,
+      seed: 1,
+      mines: [CellCoordinate(row: 0, column: 0)]
+    )
+
+    XCTAssertEqual(BoardDifficultyScorer().threeBV(board), 1)
+  }
+
+  func testHardNoGuessGeneratorReturnsVerifiedBoard() throws {
+    let configuration = Difficulty.easy.configuration
+    let firstReveal = CellCoordinate(row: configuration.height / 2, column: configuration.width / 2)
+    let generator = HardNoGuessBoardGenerator(
+      maximumAttempts: 96,
+      randomAttemptsBeforeFallback: 64
+    )
+    let board = try generator.generate(
+      configuration: configuration,
+      firstReveal: firstReveal,
+      seed: 7_777
+    )
+
+    XCTAssertTrue(NoGuessSolver().verify(board, firstReveal: firstReveal).isSolved)
+    XCTAssertGreaterThan(BoardDifficultyScorer().threeBV(board), 0)
+  }
+
   /// Runs three boards per preset normally. Set MINESWEEPER_EXTENDED_TESTS=1 for 250 per preset,
   /// or set it to an explicit larger iteration count (for example 1000) for the overnight gate.
   func testBulkNoGuessGenerationAcrossPresets() throws {

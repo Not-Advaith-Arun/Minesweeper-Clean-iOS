@@ -490,6 +490,198 @@ public struct NoGuessBoardGenerator: BoardGenerating, Sendable {
   }
 }
 
+public struct BoardDifficultyScorer: Sendable {
+  public init() {}
+
+  /// Bechtel's Board Benchmark Value: the minimum number of direct safe-cell openings
+  /// needed to reveal every non-mine cell without flags or chords.
+  public func threeBV(_ board: GeneratedBoard) -> Int {
+    var marked: Set<CellCoordinate> = []
+    var score = 0
+
+    for row in 0..<board.configuration.height {
+      for column in 0..<board.configuration.width {
+        let coordinate = CellCoordinate(row: row, column: column)
+        guard !marked.contains(coordinate),
+          !board.isMine(at: coordinate),
+          board.adjacentMineCount(at: coordinate) == 0
+        else { continue }
+        score += 1
+        markZeroOpening(from: coordinate, on: board, into: &marked)
+      }
+    }
+
+    for row in 0..<board.configuration.height {
+      for column in 0..<board.configuration.width {
+        let coordinate = CellCoordinate(row: row, column: column)
+        if !marked.contains(coordinate), !board.isMine(at: coordinate) {
+          marked.insert(coordinate)
+          score += 1
+        }
+      }
+    }
+
+    return score
+  }
+
+  private func markZeroOpening(
+    from start: CellCoordinate,
+    on board: GeneratedBoard,
+    into marked: inout Set<CellCoordinate>
+  ) {
+    var queue = [start]
+    var cursor = 0
+    marked.insert(start)
+    while cursor < queue.count {
+      let coordinate = queue[cursor]
+      cursor += 1
+      guard board.adjacentMineCount(at: coordinate) == 0 else { continue }
+      for neighbor in board.configuration.neighbors(of: coordinate)
+      where !board.isMine(at: neighbor) && marked.insert(neighbor).inserted {
+        if board.adjacentMineCount(at: neighbor) == 0 { queue.append(neighbor) }
+      }
+    }
+  }
+}
+
+public struct HardNoGuessBoardGenerator: BoardGenerating, Sendable {
+  public var maximumAttempts: Int
+  public var randomAttemptsBeforeFallback: Int
+  public var solver: NoGuessSolver
+  public var scorer: BoardDifficultyScorer
+
+  public init(
+    maximumAttempts: Int = 2_048,
+    randomAttemptsBeforeFallback: Int = 1_920,
+    solver: NoGuessSolver = NoGuessSolver(),
+    scorer: BoardDifficultyScorer = BoardDifficultyScorer()
+  ) {
+    self.maximumAttempts = max(1, maximumAttempts)
+    self.randomAttemptsBeforeFallback = max(0, min(randomAttemptsBeforeFallback, maximumAttempts))
+    self.solver = solver
+    self.scorer = scorer
+  }
+
+  public func generate(
+    configuration: BoardConfiguration,
+    firstReveal: CellCoordinate,
+    seed: UInt64
+  ) throws -> GeneratedBoard {
+    guard configuration.contains(firstReveal) else { throw BoardGenerationError.invalidFirstReveal }
+
+    var protected: Set<CellCoordinate> = [firstReveal]
+    protected.formUnion(configuration.neighbors(of: firstReveal))
+    var candidates = allCoordinates(in: configuration).filter { !protected.contains($0) }
+    if candidates.count < configuration.mineCount {
+      protected = [firstReveal]
+      candidates = allCoordinates(in: configuration).filter { !protected.contains($0) }
+      guard candidates.count >= configuration.mineCount else {
+        throw BoardGenerationError.insufficientUnprotectedCells
+      }
+    }
+
+    var random = SplitMix64(seed: seed)
+    var bestBoard: GeneratedBoard?
+    var bestScore = Int.min
+
+    for _ in 0..<randomAttemptsBeforeFallback {
+      shuffle(&candidates, using: &random)
+      consider(
+        GeneratedBoard(configuration: configuration, seed: seed, mines: Set(candidates.prefix(configuration.mineCount))),
+        firstReveal: firstReveal,
+        bestBoard: &bestBoard,
+        bestScore: &bestScore
+      )
+    }
+
+    for mines in structuredMineSets(
+      candidates: candidates,
+      mineCount: configuration.mineCount,
+      firstReveal: firstReveal,
+      random: &random
+    ) {
+      consider(
+        GeneratedBoard(configuration: configuration, seed: seed, mines: mines),
+        firstReveal: firstReveal,
+        bestBoard: &bestBoard,
+        bestScore: &bestScore
+      )
+    }
+
+    for _ in randomAttemptsBeforeFallback..<maximumAttempts {
+      shuffle(&candidates, using: &random)
+      consider(
+        GeneratedBoard(configuration: configuration, seed: seed, mines: Set(candidates.prefix(configuration.mineCount))),
+        firstReveal: firstReveal,
+        bestBoard: &bestBoard,
+        bestScore: &bestScore
+      )
+    }
+
+    if let bestBoard { return bestBoard }
+    throw BoardGenerationError.unableToGenerateNoGuessBoard(attempts: maximumAttempts)
+  }
+
+  private func consider(
+    _ board: GeneratedBoard,
+    firstReveal: CellCoordinate,
+    bestBoard: inout GeneratedBoard?,
+    bestScore: inout Int
+  ) {
+    guard solver.verify(board, firstReveal: firstReveal).isSolved else { return }
+    let score = scorer.threeBV(board)
+    if score > bestScore {
+      bestScore = score
+      bestBoard = board
+    }
+  }
+
+  private func allCoordinates(in configuration: BoardConfiguration) -> [CellCoordinate] {
+    (0..<configuration.cellCount).compactMap(configuration.coordinate)
+  }
+
+  private func shuffle(_ values: inout [CellCoordinate], using random: inout SplitMix64) {
+    guard values.count > 1 else { return }
+    for index in stride(from: values.count - 1, through: 1, by: -1) {
+      values.swapAt(index, random.next(upperBound: index + 1))
+    }
+  }
+
+  private func structuredMineSets(
+    candidates: [CellCoordinate],
+    mineCount: Int,
+    firstReveal: CellCoordinate,
+    random: inout SplitMix64
+  ) -> [Set<CellCoordinate>] {
+    var tieBreakers: [CellCoordinate: UInt64] = [:]
+    for coordinate in candidates { tieBreakers[coordinate] = random.next() }
+
+    func makeSet(distance: (CellCoordinate) -> Int) -> Set<CellCoordinate> {
+      let ordered = candidates.sorted { left, right in
+        let leftDistance = distance(left)
+        let rightDistance = distance(right)
+        if leftDistance != rightDistance { return leftDistance > rightDistance }
+        return tieBreakers[left, default: 0] < tieBreakers[right, default: 0]
+      }
+      return Set(ordered.prefix(mineCount))
+    }
+
+    return [
+      makeSet {
+        max(abs($0.row - firstReveal.row), abs($0.column - firstReveal.column))
+      },
+      makeSet {
+        abs($0.row - firstReveal.row) + abs($0.column - firstReveal.column)
+      },
+      makeSet {
+        let row = $0.row - firstReveal.row
+        let column = $0.column - firstReveal.column
+        return row * row + column * column
+      },
+    ]
+  }
+}
+
 /// Fast personal-play generator used by the iOS replica app to match the Android app's
 /// immediate first tap. It preserves first-tap and neighbor safety but does not run the
 /// no-guess verifier, so board materialization is effectively instant on device.

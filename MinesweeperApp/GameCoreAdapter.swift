@@ -105,7 +105,7 @@ final class GameSessionController {
     self.engine = GameEngine(
       difficulty: difficulty.coreValue,
       actionMode: initialMode,
-      generator: FastBoardGenerator()
+      generator: Self.generator(for: difficulty)
     )
     self.board = BoardPresentation(columns: difficulty.size.columns, rows: difficulty.size.rows)
     self.remainingMineCount = difficulty.size.mines
@@ -159,7 +159,7 @@ final class GameSessionController {
     engine = GameEngine(
       difficulty: difficulty.coreValue,
       actionMode: settings.primaryAction == .dig ? .dig : .flag,
-      generator: FastBoardGenerator()
+      generator: Self.generator(for: difficulty)
     )
     explodedMine = nil
     completionRecord = nil
@@ -295,6 +295,17 @@ final class GameSessionController {
         return .covered
       }
     )
+  }
+
+  private static func generator(for difficulty: ReplicaDifficulty) -> any BoardGenerating {
+    switch difficulty {
+    case .extreme:
+      HardNoGuessBoardGenerator(maximumAttempts: 2_048, randomAttemptsBeforeFallback: 1_920)
+    case .hard, .huge:
+      NoGuessBoardGenerator(maximumAttempts: 4_096, randomAttemptsBeforeFallback: 96)
+    case .beginner, .easy, .medium:
+      NoGuessBoardGenerator(maximumAttempts: 2_048, randomAttemptsBeforeFallback: 64)
+    }
   }
 }
 
