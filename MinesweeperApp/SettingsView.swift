@@ -9,87 +9,98 @@ struct SettingsView: View {
     ZStack {
       ReplicaBackground(theme: theme)
       ScrollView {
-        LazyVStack(spacing: 28) {
-          SettingsGroup(title: "Board") {
-            SettingsToggle(
-              title: "Cell borders",
-              detail: "Draw a fine line between cells",
-              isOn: binding(\.cellBorders),
-              identifier: "settings.cellBorders"
-            )
-            SettingsToggle(
-              title: "Show action toggle",
-              detail: store.settings.longPressEnabled
-                ? "Keep dig and flag control on the board"
-                : "Required while long press is disabled",
-              isOn: binding(\.showActionToggle),
-              identifier: "settings.actionToggle",
-              disabled: !store.settings.longPressEnabled
-            )
-            SettingsPicker(title: "Default action", selection: binding(\.primaryAction))
-          }
+        LazyVStack(spacing: 0) {
+          SettingsToggle(
+            title: "Cell borders",
+            detail: "Draw a fine line between cells",
+            isOn: binding(\.cellBorders),
+            identifier: "settings.cellBorders"
+          )
 
-          SettingsGroup(title: "Controls") {
-            SettingsToggle(
-              title: "Long press",
-              detail: "Use the opposite of the selected action",
-              isOn: binding(\.longPressEnabled),
-              identifier: "settings.longPress"
-            )
-            SettingsSlider(
-              title: "Long-press delay",
-              value: binding(\.longPressDelayMilliseconds),
-              range: 100...500,
-              step: 25,
-              formatted: { "\(Int($0)) ms" },
-              disabled: !store.settings.longPressEnabled
-            )
-            SettingsToggle(
-              title: "Easy digging",
-              detail: "Tap a completed clue to reveal neighbors",
-              isOn: binding(\.easyDigging),
-              identifier: "settings.easyDigging"
-            )
-            SettingsToggle(
-              title: "Easy flagging",
-              detail: "Tap a satisfied clue to place flags",
-              isOn: binding(\.easyFlagging),
-              identifier: "settings.easyFlagging"
-            )
-          }
+          SettingsToggle(
+            title: "Show action toggle",
+            detail: store.settings.longPressEnabled
+              ? "Keep dig and flag control on the board"
+              : "Required while long press is disabled",
+            isOn: binding(\.showActionToggle),
+            identifier: "settings.actionToggle",
+            disabled: !store.settings.longPressEnabled
+          )
+          .padding(.top, 75)
 
-          SettingsGroup(title: "Feedback") {
-            SettingsSlider(
-              title: "Animation speed",
-              value: binding(\.animationSpeed),
-              range: 0...150,
-              step: 5,
-              formatted: { "\(Int($0))%" }
-            )
-            SettingsToggle(
-              title: "Vibration",
-              detail: "Haptic feedback for game actions",
-              isOn: binding(\.vibrationEnabled),
-              identifier: "settings.vibration"
-            )
-            SettingsSlider(
-              title: "Vibration intensity",
-              value: binding(\.vibrationDurationMilliseconds),
-              range: 5...200,
-              step: 5,
-              formatted: { "\(Int($0)) ms" },
-              disabled: !store.settings.vibrationEnabled
-            )
-          }
+          SettingsPicker(title: "Default action", selection: binding(\.primaryAction))
+            .padding(.top, 75)
+
+          SettingsToggle(
+            title: "Long press",
+            detail: "Use the opposite of the selected action",
+            isOn: binding(\.longPressEnabled),
+            identifier: "settings.longPress"
+          )
+          .padding(.top, 75)
+
+          SettingsSlider(
+            title: "Long-press delay",
+            value: binding(\.longPressDelayMilliseconds),
+            range: 100...500,
+            step: 25,
+            formatted: { "\(Int($0)) ms" },
+            disabled: !store.settings.longPressEnabled
+          )
+          .padding(.top, 75)
+
+          SettingsToggle(
+            title: "Easy digging",
+            detail: "Tap a completed clue to reveal neighbors",
+            isOn: binding(\.easyDigging),
+            identifier: "settings.easyDigging"
+          )
+          .padding(.top, 75)
+
+          SettingsToggle(
+            title: "Easy flagging",
+            detail: "Tap a satisfied clue to place flags",
+            isOn: binding(\.easyFlagging),
+            identifier: "settings.easyFlagging"
+          )
+          .padding(.top, 75)
+
+          SettingsSlider(
+            title: "Animation speed",
+            value: binding(\.animationSpeed),
+            range: 0...150,
+            step: 5,
+            formatted: { "\(Int($0))%" }
+          )
+          .padding(.top, 75)
+
+          SettingsToggle(
+            title: "Vibration",
+            detail: "Haptic feedback for game actions",
+            isOn: binding(\.vibrationEnabled),
+            identifier: "settings.vibration"
+          )
+          .padding(.top, 75)
+
+          SettingsSlider(
+            title: "Vibration intensity",
+            value: binding(\.vibrationDurationMilliseconds),
+            range: 5...200,
+            step: 5,
+            formatted: { "\(Int($0)) ms" },
+            disabled: !store.settings.vibrationEnabled
+          )
+          .padding(.top, 75)
 
           Button("Reset to defaults", role: .destructive) { showResetConfirmation = true }
             .font(.rubik(14, weight: .medium))
             .foregroundStyle(theme.mine)
             .padding(.vertical, 14)
+            .padding(.top, 75)
             .accessibilityIdentifier("settings.reset")
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
+        .padding(.horizontal, 30)
+        .padding(.top, 30)
         .padding(.bottom, 42)
       }
     }
@@ -112,22 +123,6 @@ struct SettingsView: View {
   }
 }
 
-private struct SettingsGroup<Content: View>: View {
-  @Environment(AppStore.self) private var store
-  let title: String
-  @ViewBuilder let content: Content
-
-  var body: some View {
-    VStack(spacing: 0) {
-      SectionHeader(title: title, theme: store.theme)
-        .padding(.bottom, 10)
-      VStack(spacing: 0) {
-        content
-      }
-    }
-  }
-}
-
 private struct SettingsToggle: View {
   @Environment(AppStore.self) private var store
   let title: String
@@ -147,12 +142,6 @@ private struct SettingsToggle: View {
     .tint(store.theme.accent)
     .foregroundStyle(store.theme.foreground.opacity(0.84))
     .opacity(disabled ? 0.48 : 1)
-    .padding(.vertical, 13)
-    .overlay(alignment: .bottom) {
-      Rectangle()
-        .fill(store.theme.muted.opacity(0.14))
-        .frame(height: ReplicaMetrics.thinStroke)
-    }
     .accessibilityIdentifier(identifier)
     .disabled(disabled)
   }
@@ -192,12 +181,6 @@ private struct SettingsPicker: View {
       }
     }
     .foregroundStyle(store.theme.foreground.opacity(0.84))
-    .padding(.vertical, 13)
-    .overlay(alignment: .bottom) {
-      Rectangle()
-        .fill(store.theme.muted.opacity(0.14))
-        .frame(height: ReplicaMetrics.thinStroke)
-    }
   }
 }
 
@@ -225,11 +208,5 @@ private struct SettingsSlider: View {
     .foregroundStyle(store.theme.foreground.opacity(0.84))
     .disabled(disabled)
     .opacity(disabled ? 0.48 : 1)
-    .padding(.vertical, 13)
-    .overlay(alignment: .bottom) {
-      Rectangle()
-        .fill(store.theme.muted.opacity(0.14))
-        .frame(height: ReplicaMetrics.thinStroke)
-    }
   }
 }
