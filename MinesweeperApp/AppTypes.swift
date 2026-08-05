@@ -124,6 +124,8 @@ enum AppConstants {
   static let themeStorageKey = "replica.theme.v1"
   static let recordsStorageKey = "replica.records.v1"
   static let difficultyStorageKey = "replica.difficulty.v1"
+  static let actionTogglePreferenceStorageKey = "replica.action-toggle-preference.v1"
+  static let previewCompletionID = UUID(uuidString: "00000000-0000-0000-0000-000000000021")!
 }
 
 extension Int {
@@ -135,5 +137,17 @@ extension Int {
     return hours > 0
       ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
       : String(format: "%d:%02d", minutes, seconds)
+  }
+
+  var androidDurationString: String {
+    let clamped = Swift.max(0, self)
+    let hours = clamped / 3_600
+    let minutes = (clamped % 3_600) / 60
+    let seconds = clamped % 60
+    var components: [String] = []
+    if hours > 0 { components.append("\(hours)H") }
+    if minutes > 0 { components.append("\(minutes)M") }
+    if seconds > 0 || components.isEmpty { components.append("\(seconds)S") }
+    return components.joined(separator: " ")
   }
 }

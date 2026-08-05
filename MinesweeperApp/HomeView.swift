@@ -9,36 +9,34 @@ struct HomeView: View {
     @Bindable var store = store
     ZStack {
       ReplicaBackground(theme: theme)
-      VStack(spacing: 0) {
-        HStack {
-          Spacer()
-          Button {
-            store.navigation.append(.themes)
-          } label: {
-            Image(systemName: "paintpalette.fill")
-              .font(.system(size: 27, weight: .regular))
-              .foregroundStyle(theme.foreground.opacity(0.76))
-              .frame(width: 48, height: 48)
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel("Themes")
-          .accessibilityIdentifier("home.quickThemes")
+      GeometryReader { geometry in
+        let width = geometry.size.width
+        let height = UIScreen.main.bounds.height
+
+        Button {
+          store.navigation.append(.themes)
+        } label: {
+          PaletteIcon(
+            color: theme.foreground.opacity(0.76),
+            holeColor: theme.background
+          )
+            .frame(width: 27, height: 27)
+            .frame(width: 48, height: 48)
         }
-        .padding(.horizontal, 25)
-        .padding(.top, 42)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Themes")
+        .accessibilityIdentifier("home.quickThemes")
+        .position(x: width - 32, y: height * 0.083)
 
-        Spacer(minLength: 80)
-
-        MineLogo(theme: theme, size: 154)
+        MineLogo(theme: theme, size: 144)
           .accessibilityLabel("Minesweeper")
-
-        Spacer(minLength: 42)
+          .position(x: width / 2, y: height * 0.305)
 
         DifficultyCarousel(selection: $store.selectedDifficulty)
-          .frame(height: 44)
-          .frame(maxWidth: ReplicaMetrics.maxControlWidth)
+          .frame(width: min(ReplicaMetrics.maxControlWidth, width - 72), height: 40)
+          .position(x: width / 2, y: height * 0.445)
 
-        VStack(spacing: 22) {
+        VStack(spacing: 18) {
           Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
             .buttonStyle(AndroidPillButtonStyle(theme: theme))
             .disabled(!store.persistenceReady)
@@ -61,16 +59,14 @@ struct HomeView: View {
             .accessibilityIdentifier("home.resume")
           }
         }
-        .frame(maxWidth: ReplicaMetrics.maxControlWidth)
-        .padding(.top, 10)
-        .padding(.horizontal, ReplicaMetrics.horizontalInset)
-
-        Spacer(minLength: 48)
+        .frame(width: min(ReplicaMetrics.maxControlWidth, width - 72))
+        .position(x: width / 2, y: height * (store.savedGames[store.selectedDifficulty] == nil ? 0.500 : 0.530))
 
         HomeActionBar()
-          .padding(.horizontal, 58)
-          .padding(.bottom, 46)
+          .frame(width: min(286, width - 76))
+          .position(x: width / 2, y: height * 0.690)
       }
+      .ignoresSafeArea()
     }
     .foregroundStyle(theme.foreground.opacity(0.78))
     .toolbar(.hidden, for: .navigationBar)
@@ -102,7 +98,7 @@ private struct DifficultyCarousel: View {
       TabView(selection: $selection) {
         ForEach(ReplicaDifficulty.allCases) { difficulty in
           Text(difficulty.title)
-            .font(.rubik(20, weight: .regular))
+            .font(.rubik(14, weight: .regular))
             .foregroundStyle(theme.foreground.opacity(0.78))
             .tag(difficulty)
         }
@@ -143,23 +139,35 @@ private struct HomeActionBar: View {
 
   var body: some View {
     HStack {
-      homeAction(symbol: "gearshape", label: "Settings") { store.navigation.append(.settings) }
+      homeAction(asset: "FooterSettings", label: "Settings") { store.navigation.append(.settings) }
       Spacer()
-      homeAction(symbol: "bag", label: "Themes") { store.navigation.append(.themes) }
+      homeAction(asset: "FooterCart", label: "Themes") { store.navigation.append(.themes) }
       Spacer()
-      homeAction(symbol: "list.bullet", label: "Times") { store.navigation.append(.times) }
+      homeAction(asset: "FooterList", label: "Times") { store.navigation.append(.times) }
       Spacer()
-      homeAction(symbol: "info.circle", label: "About") { store.showAbout = true }
+      homeAction(asset: "FooterInfo", label: "About") { store.showAbout = true }
     }
   }
 
-  private func homeAction(symbol: String, label: String, action: @escaping () -> Void) -> some View
+  private func homeAction(asset: String, label: String, action: @escaping () -> Void) -> some View
   {
     Button(action: action) {
-      Image(systemName: symbol)
-        .font(.system(size: 28, weight: .regular))
+      Image(asset)
+        .resizable()
+        .renderingMode(.template)
+        .scaledToFit()
+        .frame(width: 19, height: 19)
         .frame(width: 48, height: 48)
         .foregroundStyle(store.theme.foreground.opacity(0.72))
+        .background {
+          Circle()
+            .fill(.ultraThinMaterial)
+            .overlay(Circle().fill(store.theme.accent.opacity(0.045)))
+            .overlay(
+              Circle().stroke(
+                Color.white.opacity(store.theme.isAMOLED ? 0.20 : 0.48), lineWidth: 0.8)
+            )
+        }
     }
     .buttonStyle(.plain)
     .accessibilityLabel(label)
@@ -175,8 +183,8 @@ struct QuickThemeBar: View {
     HStack(spacing: 9) {
       if isExpanded {
         ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 13) {
-            ForEach(ThemeCatalog.all) { theme in
+          HStack(spacing: 0) {
+            ForEach(ThemeCatalog.quickDisplayOrder) { theme in
               Button {
                 store.chooseTheme(theme)
               } label: {
@@ -199,7 +207,8 @@ struct QuickThemeBar: View {
           isExpanded.toggle()
         }
       } label: {
-        Image(systemName: isExpanded ? "xmark" : "paintpalette.fill")
+        PaletteIcon(color: store.theme.background, holeColor: store.theme.covered)
+          .frame(width: 25, height: 25)
       }
       .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 43, filled: true))
       .accessibilityLabel(isExpanded ? "Close theme picker" : "Open theme picker")
@@ -209,9 +218,7 @@ struct QuickThemeBar: View {
     .padding(.trailing, 3)
     .background {
       if isExpanded {
-        Capsule(style: .continuous)
-          .fill(store.theme.surface.opacity(0.86))
-          .overlay(Capsule().stroke(store.theme.muted.opacity(0.4), lineWidth: 1))
+        GlassCapsuleSurface(theme: store.theme, emphasized: true)
       }
     }
   }
@@ -226,15 +233,20 @@ struct ThemeSwatch: View {
     ZStack {
       Circle()
         .fill(theme.background)
-        .overlay(alignment: .bottomTrailing) {
-          Circle().fill(theme.accent).frame(width: compact ? 14 : 20)
-        }
+        .overlay(Circle().stroke(theme.foreground.opacity(0.10), lineWidth: 1))
       Circle()
-        .stroke(
-          selected ? theme.accent : theme.foreground.opacity(0.18), lineWidth: selected ? 3 : 1
-        )
-        .padding(selected ? -3 : 0)
+        .fill(theme.accent)
+        .frame(width: compact ? 14 : 20, height: compact ? 14 : 20)
+      if selected {
+        Circle()
+          .fill(theme.accent)
+        Circle()
+          .fill(theme.background)
+          .frame(width: compact ? 18 : 29, height: compact ? 18 : 29)
+      }
     }
-    .frame(width: compact ? 25 : 43, height: compact ? 25 : 43)
+    .frame(width: compact ? 28 : 43, height: compact ? 28 : 43)
+    .frame(width: compact ? 40 : 43, height: compact ? 40 : 43)
+    .contentShape(Rectangle())
   }
 }

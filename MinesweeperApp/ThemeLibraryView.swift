@@ -2,15 +2,16 @@ import SwiftUI
 
 struct ThemeLibraryView: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dismiss) private var dismiss
   private let columns = [GridItem(.adaptive(minimum: 148), spacing: 14)]
 
   var body: some View {
     let theme = store.theme
-    ZStack {
-      ReplicaBackground(theme: theme)
-      ScrollView {
-        LazyVGrid(columns: columns, spacing: 12) {
-          ForEach(ThemeCatalog.all) { candidate in
+    VStack(spacing: 0) {
+        ReplicaScreenHeader(title: "Themes", theme: theme) { dismiss() }
+        ScrollView {
+          LazyVGrid(columns: columns, spacing: 12) {
+          ForEach(ThemeCatalog.displayOrder) { candidate in
             Button {
               store.chooseTheme(candidate)
             } label: {
@@ -20,16 +21,15 @@ struct ThemeLibraryView: View {
             .accessibilityIdentifier("theme.\(candidate.id)")
           }
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 28)
-        .padding(.bottom, 42)
-        .animation(
-          ReplicaMotion.standard(speedPercent: store.settings.animationSpeed), value: store.themeID)
-      }
+          .padding(.horizontal, 28)
+          .padding(.top, 18)
+          .padding(.bottom, 42)
+          .animation(
+            ReplicaMotion.standard(speedPercent: store.settings.animationSpeed), value: store.themeID)
+        }
     }
-    .navigationTitle("Themes")
-    .navigationBarTitleDisplayMode(.inline)
-    .replicaNavigationAppearance(theme: theme)
+    .background(ReplicaBackground(theme: theme))
+    .toolbar(.hidden, for: .navigationBar)
   }
 }
 
@@ -42,14 +42,10 @@ private struct ThemeCard: View {
       ThemeSwatch(theme: theme, selected: selected, compact: true)
       VStack(alignment: .leading, spacing: 3) {
         Text(theme.name)
-          .font(.rubik(14, weight: .regular))
+          .font(.rubik(13, weight: .regular))
           .foregroundStyle(theme.foreground.opacity(0.84))
           .lineLimit(2)
-        if theme.isAMOLED {
-          Text("AMOLED")
-            .font(.rubik(9, weight: .semibold))
-            .foregroundStyle(theme.muted)
-        }
+          .minimumScaleFactor(0.84)
       }
       Spacer(minLength: 0)
       if selected {

@@ -20,6 +20,7 @@ final class AppStore {
   private(set) var persistenceReady = false
 
   private let defaults: UserDefaults
+  private var preferredActionToggleVisibility: Bool
 
   init(defaults: UserDefaults = .standard) {
     Self.resetStateForUITestingIfRequested(defaults: defaults)
@@ -27,9 +28,13 @@ final class AppStore {
     self.selectedDifficulty =
       defaults.string(forKey: AppConstants.difficultyStorageKey)
       .flatMap(ReplicaDifficulty.init(rawValue:)) ?? .beginner
-    self.settings =
+    let loadedSettings =
       Self.decode(UserSettings.self, key: AppConstants.settingsStorageKey, defaults: defaults)
       ?? .default
+    self.settings = loadedSettings
+    self.preferredActionToggleVisibility =
+      defaults.object(forKey: AppConstants.actionTogglePreferenceStorageKey) as? Bool
+      ?? loadedSettings.showActionToggle
     let storedTheme = defaults.string(forKey: AppConstants.themeStorageKey)
     self.themeID =
       storedTheme.flatMap { identifier in
@@ -39,7 +44,59 @@ final class AppStore {
       Self.decode([ReplicaTimeRecord].self, key: AppConstants.recordsStorageKey, defaults: defaults)
       ?? []
     normalizeSettings()
+#if DEBUG
+    let environment = ProcessInfo.processInfo.environment
+    if let requestedTheme = environment["MINESWEEPER_UI_TEST_THEME"],
+      ThemeCatalog.all.contains(where: { $0.id == requestedTheme })
+    {
+      themeID = requestedTheme
+    }
+    if environment["MINESWEEPER_UI_TEST_CELL_BORDERS"] == "1" {
+      settings.cellBorders = true
+    }
+    let previewDifficulty = environment["MINESWEEPER_UI_TEST_DIFFICULTY"]
+      .flatMap(ReplicaDifficulty.init(rawValue:)) ?? .medium
+    if let requestedDifficulty = environment["MINESWEEPER_UI_TEST_DIFFICULTY"]
+      .flatMap(ReplicaDifficulty.init(rawValue:))
+    {
+      selectedDifficulty = requestedDifficulty
+    }
+    if environment["MINESWEEPER_UI_TEST_RECORDS"] == "1" {
+      selectedDifficulty = previewDifficulty
+      records = Self.previewRecords(for: previewDifficulty)
+    }
+    if environment["MINESWEEPER_UI_TEST_GAME_STATE"] == "won" {
+      selectedDifficulty = previewDifficulty
+      records = Self.previewRecords(for: previewDifficulty)
+      navigation = [.game(previewDifficulty, resume: false)]
+    } else if ["lost", "near_win", "near_loss"].contains(
+      ProcessInfo.processInfo.environment["MINESWEEPER_UI_TEST_GAME_STATE"]
+    ) {
+      selectedDifficulty = previewDifficulty
+      navigation = [.game(previewDifficulty, resume: false)]
+    }
+#endif
   }
+
+#if DEBUG
+  private static func previewRecords(for difficulty: ReplicaDifficulty) -> [ReplicaTimeRecord] {
+    let ids = [
+      UUID(uuidString: "10000000-0000-0000-0000-000000000001")!,
+      UUID(uuidString: "10000000-0000-0000-0000-000000000002")!,
+      AppConstants.previewCompletionID,
+      UUID(uuidString: "10000000-0000-0000-0000-000000000004")!,
+      UUID(uuidString: "10000000-0000-0000-0000-000000000005")!,
+    ]
+    return [17, 20, 21, 26, 50].enumerated().map { index, seconds in
+      ReplicaTimeRecord(
+        id: ids[index],
+        difficulty: difficulty,
+        seconds: seconds,
+        date: Date(timeIntervalSince1970: 1_593_216_000 + Double(index * 86_400))
+      )
+    }
+  }
+#endif
 
   var theme: AppTheme { ThemeCatalog.theme(id: themeID) }
 
@@ -53,8 +110,27 @@ final class AppStore {
   }
 
   func updateSettings(_ change: (inout UserSettings) -> Void) {
+    let previous = settings
     var revised = settings
     change(&revised)
+    if previous.longPressEnabled, !revised.longPressEnabled {
+      preferredActionToggleVisibility = previous.showActionToggle
+      defaults.set(
+        preferredActionToggleVisibility,
+        forKey: AppConstants.actionTogglePreferenceStorageKey
+      )
+      revised.showActionToggle = true
+    } else if !previous.longPressEnabled, revised.longPressEnabled {
+      revised.showActionToggle = preferredActionToggleVisibility
+    } else if revised.longPressEnabled,
+      revised.showActionToggle != previous.showActionToggle
+    {
+      preferredActionToggleVisibility = revised.showActionToggle
+      defaults.set(
+        preferredActionToggleVisibility,
+        forKey: AppConstants.actionTogglePreferenceStorageKey
+      )
+    }
     if !revised.longPressEnabled { revised.showActionToggle = true }
     settings = revised
     persistSettings()
@@ -62,6 +138,11 @@ final class AppStore {
 
   func resetSettings() {
     settings = .default
+    preferredActionToggleVisibility = UserSettings.default.showActionToggle
+    defaults.set(
+      preferredActionToggleVisibility,
+      forKey: AppConstants.actionTogglePreferenceStorageKey
+    )
     persistSettings()
   }
 
@@ -87,6 +168,12 @@ final class AppStore {
   func resume(_ difficulty: ReplicaDifficulty) {
     selectedDifficulty = difficulty
     navigation.append(.game(difficulty, resume: true))
+  }
+
+  func replaceCurrentGame(with difficulty: ReplicaDifficulty) {
+    selectedDifficulty = difficulty
+    if case .game = navigation.last { navigation.removeLast() }
+    navigation.append(.game(difficulty, resume: false))
   }
 
   func registerSavedGame(_ summary: SavedGameSummary?) {
@@ -181,6 +268,7 @@ final class AppStore {
       AppConstants.themeStorageKey,
       AppConstants.recordsStorageKey,
       AppConstants.difficultyStorageKey,
+      AppConstants.actionTogglePreferenceStorageKey,
     ] {
       defaults.removeObject(forKey: key)
     }

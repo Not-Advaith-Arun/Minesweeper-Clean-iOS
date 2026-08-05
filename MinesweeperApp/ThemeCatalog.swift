@@ -34,6 +34,8 @@ private let decodedRevealedSurface: [String: UInt32] = [
 ]
 
 private let decodedFlaggedSurface: [String: UInt32] = [
+  "material_you": 0xE2E5EF,
+  "material_you_amoled": 0x55445A,
   "alpine": 0x808F9E,
   "diletto": 0xE1E1E1,
   "aurum": 0x636363,
@@ -300,6 +302,21 @@ enum ThemeCatalog {
   ]
 
   static let fallback = all[30]  // Material You, matching a fresh Android emulator install.
+  static let displayOrder: [AppTheme] =
+    [all[30]] + Array(all[0..<9]) + [all[31]] + Array(all[9..<30])
+
+  // The Android in-game strip uses a curated light/dark sequence rather than
+  // the theme-library order. Keep the validated first viewport identical, then
+  // append the remaining themes so the strip stays fully scrollable.
+  static let quickDisplayOrder: [AppTheme] = {
+    let leadingIDs = [
+      "material_you", "aurum", "ambra", "alpine", "nennau", "kawa", "rossa", "diletto",
+    ]
+    let leading = leadingIDs.compactMap { id in all.first { $0.id == id } }
+    let leadingSet = Set(leadingIDs)
+    return leading + displayOrder.filter { !leadingSet.contains($0.id) }
+  }()
+
   static func theme(id: String) -> AppTheme { all.first { $0.id == id } ?? fallback }
 }
 

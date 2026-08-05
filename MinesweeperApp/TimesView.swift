@@ -2,16 +2,17 @@ import SwiftUI
 
 struct TimesView: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dismiss) private var dismiss
   @State private var difficulty: ReplicaDifficulty = .medium
   @State private var pendingDeletion: ReplicaTimeRecord?
 
   var body: some View {
     let theme = store.theme
-    ZStack {
-      ReplicaBackground(theme: theme)
-      VStack(spacing: 20) {
-        DifficultyTabs(selection: $difficulty)
-          .padding(.top, 26)
+    VStack(spacing: 20) {
+        ReplicaScreenHeader(title: "Top times", theme: theme) { dismiss() }
+
+        TimesDifficultySelector(selection: $difficulty)
+          .padding(.top, 8)
 
         let records = store.records(for: difficulty)
         if records.isEmpty {
@@ -20,7 +21,7 @@ struct TimesView: View {
             Image(systemName: "stopwatch")
               .font(.system(size: 42, weight: .ultraLight))
               .foregroundStyle(theme.foreground.opacity(0.54))
-            Text("No times yet")
+            Text("No times yet.")
               .font(.rubik(20, weight: .regular))
             Text("Complete a \(difficulty.title.lowercased()) game to set your first time.")
               .font(.rubik(13))
@@ -49,11 +50,9 @@ struct TimesView: View {
           .listStyle(.plain)
           .padding(.horizontal, 14)
         }
-      }
     }
-    .navigationTitle("Top times")
-    .navigationBarTitleDisplayMode(.inline)
-    .replicaNavigationAppearance(theme: theme)
+    .background(ReplicaBackground(theme: theme))
+    .toolbar(.hidden, for: .navigationBar)
     .alert("Delete this time?", isPresented: deletionAlert) {
       Button("Cancel", role: .cancel) { pendingDeletion = nil }
       Button("Delete", role: .destructive) {
@@ -73,42 +72,36 @@ struct TimesView: View {
   }
 }
 
-private struct DifficultyTabs: View {
+private struct TimesDifficultySelector: View {
   @Environment(AppStore.self) private var store
   @Binding var selection: ReplicaDifficulty
 
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
-        ForEach(ReplicaDifficulty.allCases) { difficulty in
-          Button {
-            selection = difficulty
-            store.haptic(.selection)
-          } label: {
-            Text(difficulty.title)
-              .font(.rubik(12, weight: .medium))
-              .foregroundStyle(
-                selection == difficulty
-                  ? store.theme.background : store.theme.foreground.opacity(0.78)
-              )
-              .padding(.horizontal, 15)
-              .frame(height: 36)
-              .background(
-                Capsule().fill(
-                  selection == difficulty
-                    ? store.theme.foreground : store.theme.background.opacity(0.001)))
-              .overlay {
-                Capsule()
-                  .stroke(
-                    store.theme.muted.opacity(selection == difficulty ? 0 : 0.24),
-                    lineWidth: ReplicaMetrics.thinStroke)
-              }
-          }
-          .buttonStyle(.plain)
-        }
-      }
-      .padding(.horizontal, 16)
+    HStack(spacing: 18) {
+      arrow("chevron.left", offset: -1)
+      Text(selection.title)
+        .font(.rubik(14, weight: .regular))
+      .frame(width: 150)
+      arrow("chevron.right", offset: 1)
     }
+    .foregroundStyle(store.theme.foreground.opacity(0.82))
+    .frame(height: 44)
+  }
+
+  private func arrow(_ symbol: String, offset: Int) -> some View {
+    Button {
+      guard let index = ReplicaDifficulty.allCases.firstIndex(of: selection) else { return }
+      let count = ReplicaDifficulty.allCases.count
+      withAnimation(ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)) {
+        selection = ReplicaDifficulty.allCases[(index + offset + count) % count]
+      }
+      store.haptic(.selection)
+    } label: {
+      Image(systemName: symbol)
+        .font(.system(size: 19, weight: .regular))
+        .frame(width: 44, height: 44)
+    }
+    .buttonStyle(.plain)
   }
 }
 
@@ -130,7 +123,7 @@ private struct TimeRow: View {
         .font(.rubik(13, weight: .regular))
         .foregroundStyle(store.theme.muted)
         .frame(width: 25)
-      Text(record.seconds.clockString)
+      Text(record.seconds.androidDurationString)
         .font(.system(size: 20, weight: .regular, design: .monospaced))
         .foregroundStyle(store.theme.foreground.opacity(0.82))
       Spacer()

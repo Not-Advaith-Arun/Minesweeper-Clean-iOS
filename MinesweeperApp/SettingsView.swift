@@ -2,14 +2,15 @@ import SwiftUI
 
 struct SettingsView: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dismiss) private var dismiss
   @State private var showResetConfirmation = false
 
   var body: some View {
     let theme = store.theme
-    ZStack {
-      ReplicaBackground(theme: theme)
-      ScrollView {
-        LazyVStack(spacing: 0) {
+    VStack(spacing: 0) {
+        ReplicaScreenHeader(title: "Settings", theme: theme) { dismiss() }
+        ScrollView {
+          LazyVStack(spacing: 0) {
           SettingsToggle(
             title: "Cell borders",
             detail: "Draw a fine line between cells",
@@ -26,10 +27,10 @@ struct SettingsView: View {
             identifier: "settings.actionToggle",
             disabled: !store.settings.longPressEnabled
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsPicker(title: "Default action", selection: binding(\.primaryAction))
-            .padding(.top, 75)
+            .padding(.top, 42)
 
           SettingsToggle(
             title: "Long press",
@@ -37,7 +38,7 @@ struct SettingsView: View {
             isOn: binding(\.longPressEnabled),
             identifier: "settings.longPress"
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsSlider(
             title: "Long-press delay",
@@ -47,7 +48,7 @@ struct SettingsView: View {
             formatted: { "\(Int($0)) ms" },
             disabled: !store.settings.longPressEnabled
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsToggle(
             title: "Easy digging",
@@ -55,7 +56,7 @@ struct SettingsView: View {
             isOn: binding(\.easyDigging),
             identifier: "settings.easyDigging"
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsToggle(
             title: "Easy flagging",
@@ -63,7 +64,7 @@ struct SettingsView: View {
             isOn: binding(\.easyFlagging),
             identifier: "settings.easyFlagging"
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsSlider(
             title: "Animation speed",
@@ -72,7 +73,7 @@ struct SettingsView: View {
             step: 5,
             formatted: { "\(Int($0))%" }
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsToggle(
             title: "Vibration",
@@ -80,7 +81,7 @@ struct SettingsView: View {
             isOn: binding(\.vibrationEnabled),
             identifier: "settings.vibration"
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           SettingsSlider(
             title: "Vibration intensity",
@@ -90,23 +91,22 @@ struct SettingsView: View {
             formatted: { "\(Int($0)) ms" },
             disabled: !store.settings.vibrationEnabled
           )
-          .padding(.top, 75)
+          .padding(.top, 42)
 
           Button("Reset to defaults", role: .destructive) { showResetConfirmation = true }
             .font(.rubik(14, weight: .medium))
             .foregroundStyle(theme.mine)
             .padding(.vertical, 14)
-            .padding(.top, 75)
+            .padding(.top, 42)
             .accessibilityIdentifier("settings.reset")
         }
-        .padding(.horizontal, 30)
-        .padding(.top, 30)
-        .padding(.bottom, 42)
-      }
+          .padding(.horizontal, 30)
+          .padding(.top, 22)
+          .padding(.bottom, 42)
+        }
     }
-    .navigationTitle("Settings")
-    .navigationBarTitleDisplayMode(.inline)
-    .replicaNavigationAppearance(theme: theme)
+    .background(ReplicaBackground(theme: theme))
+    .toolbar(.hidden, for: .navigationBar)
     .alert("Reset settings?", isPresented: $showResetConfirmation) {
       Button("Cancel", role: .cancel) {}
       Button("Reset", role: .destructive) { store.resetSettings() }
