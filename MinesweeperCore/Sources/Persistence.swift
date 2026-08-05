@@ -51,7 +51,16 @@ enum PersistenceLocations {
 enum JSONDocument {
   static func read<Value: Decodable>(_ type: Value.Type, from url: URL) throws -> Value? {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-    return try JSONDecoder().decode(type, from: Data(contentsOf: url))
+    do {
+      return try JSONDecoder().decode(type, from: Data(contentsOf: url))
+    } catch {
+      let formatter = ISO8601DateFormatter()
+      let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+      let invalidURL = url.deletingPathExtension()
+        .appendingPathExtension("\(stamp).invalid")
+      try? FileManager.default.moveItem(at: url, to: invalidURL)
+      return nil
+    }
   }
 
   static func write<Value: Encodable>(_ value: Value, to url: URL) throws {
@@ -61,7 +70,30 @@ enum JSONDocument {
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    try encoder.encode(value).write(to: url, options: .atomic)
+    let data = try encoder.encode(value)
+    let temporaryURL = url.deletingLastPathComponent()
+      .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+    guard FileManager.default.createFile(atPath: temporaryURL.path, contents: nil) else {
+      throw CocoaError(.fileWriteUnknown)
+    }
+    do {
+      let handle = try FileHandle(forWritingTo: temporaryURL)
+      try handle.write(contentsOf: data)
+      try handle.synchronize()
+      try handle.close()
+      let renameResult = temporaryURL.withUnsafeFileSystemRepresentation { temporaryPath in
+        url.withUnsafeFileSystemRepresentation { destinationPath in
+          guard let temporaryPath, let destinationPath else { return Int32(-1) }
+          return rename(temporaryPath, destinationPath)
+        }
+      }
+      guard renameResult == 0 else {
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+    } catch {
+      try? FileManager.default.removeItem(at: temporaryURL)
+      throw error
+    }
   }
 
   static func remove(_ url: URL) throws {

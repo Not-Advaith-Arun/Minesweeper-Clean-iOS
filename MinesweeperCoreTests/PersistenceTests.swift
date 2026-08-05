@@ -27,24 +27,30 @@ final class PersistenceTests: XCTestCase {
     XCTAssertEqual(loaded, expected)
   }
 
-  func testSnapshotsAreIndependentByDifficulty() async throws {
+  func testAllSixSnapshotsAreIndependentByDifficulty() async throws {
     let root = try temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let repository = try GameSnapshotRepository(rootURL: root)
-    let easy = GameEngine(difficulty: .easy, seed: 11).snapshot()
-    let hard = GameEngine(difficulty: .hard, seed: 22).snapshot()
-    try await repository.save(easy)
-    try await repository.save(hard)
-    let loadedEasy = try await repository.load(for: .easy)
-    let loadedHard = try await repository.load(for: .hard)
-    XCTAssertEqual(loadedEasy, easy)
-    XCTAssertEqual(loadedHard, hard)
+    let snapshots = Dictionary(
+      uniqueKeysWithValues: Difficulty.allCases.enumerated().map { index, difficulty in
+        (difficulty, GameEngine(difficulty: difficulty, seed: UInt64(index + 11)).snapshot())
+      }
+    )
+    for difficulty in Difficulty.allCases {
+      try await repository.save(try XCTUnwrap(snapshots[difficulty]))
+    }
+    for difficulty in Difficulty.allCases {
+      let loaded = try await repository.load(for: difficulty)
+      XCTAssertEqual(loaded, snapshots[difficulty], "Wrong snapshot for \(difficulty)")
+    }
 
     try await repository.remove(for: .easy)
     let removedEasy = try await repository.load(for: .easy)
-    let preservedHard = try await repository.load(for: .hard)
     XCTAssertNil(removedEasy)
-    XCTAssertEqual(preservedHard, hard)
+    for difficulty in Difficulty.allCases where difficulty != .easy {
+      let preserved = try await repository.load(for: difficulty)
+      XCTAssertEqual(preserved, snapshots[difficulty], "Removing Easy affected \(difficulty)")
+    }
   }
 
   func testCorruptSnapshotDoesNotAffectOtherDifficulty() async throws {
@@ -59,6 +65,12 @@ final class PersistenceTests: XCTestCase {
     let preservedHard = try await repository.load(for: .hard)
     XCTAssertNil(corruptEasy)
     XCTAssertEqual(preservedHard, hard)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: games.appendingPathComponent("easy.json").path))
+    let quarantinedFiles = try FileManager.default.contentsOfDirectory(
+      at: games,
+      includingPropertiesForKeys: nil
+    ).filter { $0.lastPathComponent.hasPrefix("easy.") && $0.pathExtension == "invalid" }
+    XCTAssertEqual(quarantinedFiles.count, 1)
   }
 
   func testTimeRecordsSortLimitAndDelete() async throws {
@@ -71,17 +83,21 @@ final class PersistenceTests: XCTestCase {
       difficulty: .medium, duration: 10, completedAt: Date(timeIntervalSince1970: 2))
     let middle = TimeRecord(
       difficulty: .medium, duration: 20, completedAt: Date(timeIntervalSince1970: 3))
+    let tiedOlder = TimeRecord(
+      difficulty: .medium, duration: 10, completedAt: Date(timeIntervalSince1970: 1))
     try await repository.add(slow)
     try await repository.add(fast)
     try await repository.add(middle)
+    try await repository.add(tiedOlder)
     let records = try await repository.records(for: .medium)
     let bestTwo = try await repository.bestRecords(for: .medium, limit: 2)
-    XCTAssertEqual(records.map(\.duration), [10, 20, 30])
-    XCTAssertEqual(bestTwo.map(\.duration), [10, 20])
+    XCTAssertEqual(records.map(\.duration), [10, 10, 20, 30])
+    XCTAssertEqual(records.prefix(2).map(\.id), [tiedOlder.id, fast.id])
+    XCTAssertEqual(bestTwo.map(\.id), [tiedOlder.id, fast.id])
 
     try await repository.remove(id: middle.id, from: .medium)
     let afterDelete = try await repository.records(for: .medium)
-    XCTAssertEqual(afterDelete.map(\.duration), [10, 30])
+    XCTAssertEqual(afterDelete.map(\.duration), [10, 10, 30])
   }
 
   func testPreparedBoardQueueIsFIFOAndBounded() async throws {
