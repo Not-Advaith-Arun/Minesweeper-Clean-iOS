@@ -4,6 +4,12 @@ This folder contains internal design references for the private iOS recreation. 
 
 ## Sources
 
+The four home-footer silhouettes are the 24 dp filled Material Icons
+(`settings`, `shopping_cart`, `list`, and `info`) from Google's
+`google/material-design-icons` repository. They are bundled as template SVGs
+in `MinesweeperApp/Resources/Assets.xcassets` and covered by the existing
+Apache 2.0 attribution in `Licenses/Material-Design-Icons-Apache-2.0.txt`.
+
 - **Official listing:** [Minesweeper — The Clean One on Google Play](https://play.google.com/store/apps/details?id=ee.dustland.android.minesweeper&hl=en), package `ee.dustland.android.minesweeper`. Inspected 2026-07-30; the listing reported version `1.21.3` and an update date of 2026-06-19.
 - **Package cross-check:** [APKCombo package page](https://apkcombo.com/minesweeper-the-clean-one/ee.dustland.android.minesweeper/). A locally inspected XAPK reported version name `1.21.3`, version code `95`, minimum SDK `32`, and target SDK `36`. APK, XAPK, DEX, and decompiled files are deliberately excluded from this repository.
 - **User reference:** the screenshot supplied in the request, preserved verbatim as `images/user-reference-theme-strip.png`.
