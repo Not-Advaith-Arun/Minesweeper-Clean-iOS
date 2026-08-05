@@ -110,6 +110,20 @@ final class GameSessionController {
     self.board = BoardPresentation(columns: difficulty.size.columns, rows: difficulty.size.rows)
     self.remainingMineCount = difficulty.size.mines
     self.actionMode = settings.primaryAction
+#if DEBUG
+    if let preview = Self.previewEngine(for: difficulty) {
+      self.engine = preview.engine
+      self.explodedMine = preview.explodedMine
+      if preview.engine.phase == .won {
+        self.completionRecord = ReplicaTimeRecord(
+          id: AppConstants.previewCompletionID,
+          difficulty: difficulty,
+          seconds: 21,
+          date: Date(timeIntervalSince1970: 1_593_388_800)
+        )
+      }
+    }
+#endif
     refreshPresentation()
 
     if resume {
@@ -244,7 +258,27 @@ final class GameSessionController {
       self.explodedMine = outcome.result?.explodedMine
       self.errorMessage = outcome.errorDescription
       self.lastActionCoordinate = coordinate
-      self.lastChangedCoordinates = outcome.result?.changedCoordinates ?? []
+      var visuallyChanged = outcome.result?.changedCoordinates ?? []
+      if outcome.engine.phase == .won {
+        // Clean One resolves a win by turning every mine into a flag in the
+        // same outward wave as the final reveal.
+        for (index, cell) in outcome.engine.cells.enumerated() where cell.isMine {
+          if let mine = outcome.engine.configuration.coordinate(for: index) {
+            visuallyChanged.insert(mine)
+          }
+        }
+      }
+      if outcome.engine.phase == .lost {
+        // Wrong flags also change visual state at the terminal transition and
+        // must participate in the same loss animation schedule.
+        for (index, cell) in outcome.engine.cells.enumerated()
+        where cell.isFlagged && !cell.isMine {
+          if let flagged = outcome.engine.configuration.coordinate(for: index) {
+            visuallyChanged.insert(flagged)
+          }
+        }
+      }
+      self.lastChangedCoordinates = visuallyChanged
       self.isLoading = false
       if outcome.result?.didChange == true {
         if !outcome.engine.phase.isFinished {
@@ -282,6 +316,9 @@ final class GameSessionController {
       columns: engine.configuration.width,
       rows: engine.configuration.height,
       cells: engine.cells.enumerated().map { index, cell in
+        if phase == .won, cell.isMine {
+          return .flagged
+        }
         if cell.isRevealed {
           if cell.isMine {
             let coordinate = engine.configuration.coordinate(for: index)
@@ -307,6 +344,73 @@ final class GameSessionController {
       NoGuessBoardGenerator(maximumAttempts: 2_048, randomAttemptsBeforeFallback: 64)
     }
   }
+
+#if DEBUG
+  private static func previewEngine(for difficulty: ReplicaDifficulty)
+    -> (engine: GameEngine, explodedMine: CellCoordinate?)?
+  {
+    guard let rawState = ProcessInfo.processInfo.environment["MINESWEEPER_UI_TEST_GAME_STATE"],
+      ["won", "lost", "near_win", "near_loss"].contains(rawState)
+    else { return nil }
+
+    let configuration = difficulty.coreValue.configuration
+    let centerIndex = configuration.index(
+      for: CellCoordinate(row: max(0, configuration.height / 2 - 1), column: configuration.width / 2)
+    )!
+    var mineIndices: Set<Int> = rawState == "near_loss" ? [centerIndex] : []
+    var candidate = 0
+    while mineIndices.count < configuration.mineCount {
+      let index = (candidate * 37 + 11) % configuration.cellCount
+      if rawState != "near_win" || index != centerIndex { mineIndices.insert(index) }
+      candidate += 1
+    }
+    let explodedIndex = mineIndices.sorted().first
+    let correctFlagIndex = rawState == "near_loss"
+      ? mineIndices.sorted().first(where: { $0 != centerIndex }) : nil
+    let wrongFlagIndex = rawState == "near_loss"
+      ? (0..<configuration.cellCount).first(where: {
+        !mineIndices.contains($0) && $0 != centerIndex
+      }) : nil
+    let cells = (0..<configuration.cellCount).map { index -> Cell in
+      let coordinate = configuration.coordinate(for: index)!
+      let isMine = mineIndices.contains(index)
+      let isFlagged = index == correctFlagIndex || index == wrongFlagIndex
+      let adjacent = configuration.neighbors(of: coordinate).reduce(0) { count, neighbor in
+        count + (configuration.index(for: neighbor).map(mineIndices.contains) == true ? 1 : 0)
+      }
+      return Cell(
+        isMine: isMine,
+        isRevealed: isFlagged
+          ? false
+          : isMine
+            ? rawState == "lost"
+            : !(rawState == "near_win" && index == centerIndex),
+        isFlagged: isFlagged,
+        adjacentMineCount: adjacent
+      )
+    }
+    let phase: MinesweeperCore.GamePhase = switch rawState {
+    case "won": .won
+    case "lost": .lost
+    default: .playing
+    }
+    let snapshot = MinesweeperCore.GameSnapshot(
+      difficulty: difficulty.coreValue,
+      configuration: configuration,
+      seed: 21,
+      cells: cells,
+      phase: phase,
+      actionMode: .dig,
+      elapsedTime: rawState == "won" ? 21 : 19
+    )
+    guard let engine = try? GameEngine(snapshot: snapshot) else { return nil }
+    return (
+      engine,
+      rawState == "lost"
+        ? explodedIndex.flatMap(configuration.coordinate(for:)) : nil
+    )
+  }
+#endif
 }
 
 private struct CoreActionOutcome: Sendable {

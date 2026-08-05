@@ -5,9 +5,13 @@ struct GameView: View {
   @Environment(AppStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var session: GameSessionController
   @State private var paletteExpanded = false
   @State private var showResult = false
+  @State private var showEndControls = false
+  @State private var showActionToggle = false
+  @State private var restartTask: Task<Void, Never>?
 
   let difficulty: ReplicaDifficulty
 
@@ -30,7 +34,7 @@ struct GameView: View {
         actionCoordinate: session.lastActionCoordinate,
         theme: theme,
         showsBorders: store.settings.cellBorders,
-        animationSpeed: store.settings.animationSpeed,
+        animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed,
         longPressEnabled: store.settings.longPressEnabled,
         longPressDuration: store.settings.longPressDelayMilliseconds / 1_000,
         onTap: { column, row in
@@ -50,37 +54,91 @@ struct GameView: View {
         onClose: { leaveGame() }
       )
 
-      if store.settings.showActionToggle || !store.settings.longPressEnabled {
+      if session.phase.isFinished, showEndControls, !showResult {
+        GeometryReader { geometry in
+          VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            EndGameControls(
+              currentDifficulty: difficulty,
+              regionHeight: max(140, geometry.size.height * 0.25),
+              onRestart: startNewGame
+            )
+          }
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+      } else if session.phase == .playing && showActionToggle
+        && (store.settings.showActionToggle || !store.settings.longPressEnabled)
+      {
         VStack {
           Spacer()
           ActionToggle(session: session)
         }
-        .padding(.bottom, 20)
+        .padding(.bottom, 10)
+        // The Android control sits low on tall displays, but the same fixed
+        // offset clips the capsule on compact 667-point iPhones.
+        .offset(y: UIScreen.main.bounds.height < 750 ? 0 : 34)
+        .transition(.scale(scale: 0.96).combined(with: .opacity))
       }
 
-      if showResult, session.phase.isFinished {
+      if showResult, session.phase == .won {
         Color.black.opacity(0.32).ignoresSafeArea()
           .transition(.opacity)
         ResultCard(
           session: session,
-          onRestart: {
-            showResult = false
-            session.restart()
-          },
-          onHome: { dismiss() }
+          onDismiss: {
+            withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
+              showResult = false
+            }
+          }
         )
         .padding(24)
-        .transition(.scale(scale: 0.92).combined(with: .opacity))
+        .transition(
+          .asymmetric(
+            insertion: .scale(scale: 0.96).combined(with: .opacity),
+            removal: .scale(scale: 0.98).combined(with: .opacity)
+          )
+        )
       }
     }
     .toolbar(.hidden, for: .navigationBar)
+    .navigationBarBackButtonHidden(true)
     .onAppear {
       session.updateSettings(store.settings)
       session.resumeTimerIfNeeded()
+      if session.phase.isFinished { showEndControls = true }
+      showActionToggle = session.phase == .playing
+#if DEBUG
+      if session.phase == .won,
+        ProcessInfo.processInfo.environment["MINESWEEPER_UI_TEST_GAME_STATE"] == "won"
+      {
+        showResult = true
+      }
+#endif
     }
     .onChange(of: store.settings) { _, revised in session.updateSettings(revised) }
     .onChange(of: session.feedbackSequence) { _, _ in
       store.haptic(session.feedbackAction == .dig ? .reveal : .flag)
+    }
+    .onChange(of: session.phase) { previous, current in
+      if current == .ready || current.isFinished {
+        showActionToggle = false
+      } else if current == .playing, previous == .ready {
+        let delay = !reduceMotion && store.settings.animationSpeed > 0
+          ? 0.78 * 100 / store.settings.animationSpeed : 0
+        guard delay > 0 else {
+          showActionToggle = true
+          return
+        }
+        Task {
+          try? await Task.sleep(for: .seconds(delay))
+          guard session.phase == .playing else { return }
+          withAnimation(ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)) {
+            showActionToggle = true
+          }
+        }
+      } else if current == .playing {
+        showActionToggle = true
+      }
     }
     .onChange(of: session.phase) { previous, current in
       guard previous != current, current.isFinished else { return }
@@ -91,8 +149,22 @@ struct GameView: View {
         store.haptic(.warning)
       }
       store.clearSavedGame(difficulty)
-      withAnimation(ReplicaMotion.spring(speedPercent: store.settings.animationSpeed)) {
-        showResult = true
+      showEndControls = false
+      showResult = false
+      let baseDelay = current == .won ? 0.70 : 0.72
+      let delay = !reduceMotion && store.settings.animationSpeed > 0
+        ? baseDelay * 100 / store.settings.animationSpeed : 0
+      Task {
+        try? await Task.sleep(for: .seconds(delay))
+        guard session.phase == current else { return }
+        withAnimation(ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)) {
+          showEndControls = true
+        }
+        if current == .won {
+          withAnimation(ReplicaMotion.dialogPresent(speedPercent: store.settings.animationSpeed)) {
+            showResult = true
+          }
+        }
       }
     }
     .onChange(of: scenePhase) { _, phase in
@@ -107,6 +179,7 @@ struct GameView: View {
       }
     }
     .onDisappear {
+      restartTask?.cancel()
       session.saveIfNeeded()
       store.registerSavedGame(session.savedSummary)
     }
@@ -129,6 +202,26 @@ struct GameView: View {
     store.registerSavedGame(session.savedSummary)
     dismiss()
   }
+
+  private func startNewGame(_ selected: ReplicaDifficulty) {
+    restartTask?.cancel()
+    showResult = false
+    withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
+      showEndControls = false
+    }
+
+    let delay = !reduceMotion && store.settings.animationSpeed > 0
+      ? 0.20 * 100 / store.settings.animationSpeed : 0
+    restartTask = Task { @MainActor in
+      try? await Task.sleep(for: .seconds(delay))
+      guard !Task.isCancelled else { return }
+      if selected == difficulty {
+        session.restart()
+      } else {
+        store.replaceCurrentGame(with: selected)
+      }
+    }
+  }
 }
 
 @MainActor
@@ -143,9 +236,15 @@ private struct GameStatusBar: View {
       ZStack(alignment: .top) {
         HStack {
           Button(action: onClose) {
-            Image(systemName: "chevron.left")
-              .font(.system(size: 32, weight: .regular))
+            BackArrowIcon(color: store.theme.foreground.opacity(0.82))
               .frame(width: 54, height: 54)
+              .background {
+                Circle()
+                  .fill(.ultraThinMaterial)
+                  .overlay(Circle().fill(store.theme.accent.opacity(0.045)))
+                  .overlay(Circle().stroke(Color.white.opacity(store.theme.isAMOLED ? 0.18 : 0.42), lineWidth: 0.8))
+                  .frame(width: 46, height: 46)
+              }
           }
           .buttonStyle(.plain)
           .accessibilityLabel("Back")
@@ -158,43 +257,67 @@ private struct GameStatusBar: View {
               paletteExpanded.toggle()
             }
           } label: {
-            Image(systemName: "paintpalette.fill")
-              .font(.system(size: 29, weight: .semibold))
+            PaletteIcon(
+              color: store.theme.foreground.opacity(0.82),
+              holeColor: store.theme.background
+            )
+              .frame(width: 27, height: 27)
               .frame(width: 56, height: 56)
+              .background {
+                Circle()
+                  .fill(.ultraThinMaterial)
+                  .overlay(Circle().fill(store.theme.accent.opacity(0.045)))
+                  .overlay(Circle().stroke(Color.white.opacity(store.theme.isAMOLED ? 0.18 : 0.42), lineWidth: 0.8))
+                  .frame(width: 46, height: 46)
+              }
           }
           .buttonStyle(.plain)
           .accessibilityLabel("Theme picker")
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 1)
         .padding(.top, 9)
+        .opacity(paletteExpanded ? 0 : 1)
+        .accessibilityHidden(paletteExpanded)
 
         VStack(spacing: 1) {
-          HStack(spacing: 6) {
-            MineLogo(theme: store.theme, size: 23)
-            Text("\(session.remainingMineCount)")
-              .font(.rubik(18, weight: .regular))
-              .monospacedDigit()
-              .accessibilityIdentifier("game.mines")
-          }
-          .frame(height: 27)
-
-          TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            Text(session.elapsedSeconds == 0 ? "" : gameTimeString(session.elapsedSeconds))
+          if session.phase.isFinished {
+            Text(gameTimeString(session.elapsedSeconds))
               .font(.rubik(14, weight: .regular))
               .monospacedDigit()
+              .frame(height: 45)
               .accessibilityIdentifier("game.timer")
+          } else {
+            HStack(spacing: 3) {
+              MineLogo(theme: store.theme, size: 19, tint: store.theme.foreground)
+              Text("\(session.remainingMineCount)")
+                .font(.rubik(14, weight: .medium))
+                .monospacedDigit()
+                .accessibilityIdentifier("game.mines")
+            }
+            .frame(height: 27)
+
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+              Text(session.elapsedSeconds == 0 ? "" : gameTimeString(session.elapsedSeconds))
+                .font(.rubik(12, weight: .regular))
+                .monospacedDigit()
+                .accessibilityIdentifier("game.timer")
+            }
+            .frame(height: 18)
           }
-          .frame(height: 18)
         }
         .padding(.top, 14)
+        .opacity(session.phase == .ready ? 0.42 : 1)
+        .opacity(paletteExpanded ? 0 : 1)
+        .accessibilityHidden(paletteExpanded)
+
+        if paletteExpanded {
+          QuickThemeBar(isExpanded: $paletteExpanded)
+            .padding(.horizontal, 8)
+            .padding(.top, 9)
+            .transition(.scale(scale: 0.9, anchor: .trailing).combined(with: .opacity))
+        }
       }
       .frame(height: 76)
-
-      if paletteExpanded {
-        QuickThemeBar(isExpanded: $paletteExpanded)
-          .padding(.horizontal, 12)
-          .transition(.move(edge: .top).combined(with: .opacity))
-      }
 
       Spacer()
     }
@@ -203,7 +326,7 @@ private struct GameStatusBar: View {
   }
 
   private func gameTimeString(_ seconds: Int) -> String {
-    seconds < 60 ? "\(seconds)S" : seconds.clockString
+    seconds.androidDurationString
   }
 }
 
@@ -213,16 +336,12 @@ private struct ActionToggle: View {
   let session: GameSessionController
 
   var body: some View {
-    HStack(spacing: 0) {
+    HStack(spacing: 8) {
       actionButton(.dig)
       actionButton(.flag)
     }
-    .padding(5)
-    .background(
-      Capsule(style: .continuous)
-        .fill(store.theme.background.opacity(0.94))
-        .overlay(Capsule().stroke(store.theme.separator.opacity(0.9), lineWidth: 1))
-    )
+    .padding(6)
+    .background(GlassCapsuleSurface(theme: store.theme, emphasized: true))
     .accessibilityIdentifier("game.actionToggle")
   }
 
@@ -233,10 +352,22 @@ private struct ActionToggle: View {
         store.haptic(.selection)
       }
     } label: {
-      Image(systemName: mode == .dig ? "gearshape.fill" : "flag.fill")
-        .font(.system(size: 25, weight: .semibold))
-        .frame(width: 52, height: 52)
-        .foregroundStyle(session.actionMode == mode ? store.theme.background : store.theme.foreground)
+      Group {
+        if mode == .dig {
+          MineLogo(
+            theme: store.theme,
+            size: 20,
+            tint: session.actionMode == mode ? store.theme.background : store.theme.foreground,
+            holeTint: session.actionMode == mode ? store.theme.covered : store.theme.background
+          )
+        } else {
+          FlagIcon(
+            color: session.actionMode == mode ? store.theme.background : store.theme.foreground
+          )
+          .frame(width: 20, height: 20)
+        }
+      }
+        .frame(width: 46, height: 46)
         .background {
           if session.actionMode == mode {
             Circle().fill(store.theme.covered)
@@ -250,70 +381,130 @@ private struct ActionToggle: View {
 }
 
 @MainActor
+private struct EndGameControls: View {
+  @Environment(AppStore.self) private var store
+  @State private var selection: ReplicaDifficulty
+  let regionHeight: CGFloat
+  let onRestart: (ReplicaDifficulty) -> Void
+
+  init(
+    currentDifficulty: ReplicaDifficulty,
+    regionHeight: CGFloat,
+    onRestart: @escaping (ReplicaDifficulty) -> Void
+  ) {
+    _selection = State(initialValue: currentDifficulty)
+    self.regionHeight = regionHeight
+    self.onRestart = onRestart
+  }
+
+  var body: some View {
+    VStack(spacing: 10) {
+      Button("Start new game") { onRestart(selection) }
+        .buttonStyle(AndroidPillButtonStyle(theme: store.theme))
+        .accessibilityIdentifier("game.startNew")
+
+      HStack {
+        difficultyArrow("chevron.left", offset: -1)
+        Text(selection.title)
+          .font(.rubik(14, weight: .medium))
+          .frame(maxWidth: .infinity)
+          .accessibilityIdentifier("game.endDifficulty")
+        difficultyArrow("chevron.right", offset: 1)
+      }
+      .frame(height: 40)
+    }
+    .foregroundStyle(store.theme.foreground.opacity(0.84))
+    .padding(.horizontal, 50)
+    .padding(.bottom, 24)
+    .frame(maxWidth: .infinity, minHeight: regionHeight, alignment: .bottom)
+    .background {
+      LinearGradient(
+        colors: [store.theme.background.opacity(0), store.theme.background.opacity(0.92)],
+        startPoint: .top,
+        endPoint: .center
+      )
+      .background(.ultraThinMaterial.opacity(0.38))
+    }
+  }
+
+  private func difficultyArrow(_ symbol: String, offset: Int) -> some View {
+    Button {
+      guard let index = ReplicaDifficulty.allCases.firstIndex(of: selection) else { return }
+      let count = ReplicaDifficulty.allCases.count
+      withAnimation(ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)) {
+        selection = ReplicaDifficulty.allCases[(index + offset + count) % count]
+      }
+      store.haptic(.selection)
+    } label: {
+      Image(systemName: symbol)
+        .font(.system(size: 18, weight: .regular))
+        .frame(width: 44, height: 44)
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+@MainActor
 private struct ResultCard: View {
   @Environment(AppStore.self) private var store
   let session: GameSessionController
-  let onRestart: () -> Void
-  let onHome: () -> Void
+  let onDismiss: () -> Void
 
   private var title: String {
-    if session.phase == .lost { return "Mine found" }
-    let options = ["Clean sweep!", "Perfect!", "Nicely done!", "All clear!"]
+    let options = ["Neat!", "Clean sweep!", "Perfect!", "Nicely done!", "All clear!"]
     return options[session.elapsedSeconds % options.count]
   }
 
   var body: some View {
     VStack(spacing: 16) {
-      Image(systemName: session.phase == .won ? "sparkles" : "burst.fill")
-        .font(.system(size: 31, weight: .medium))
-        .foregroundStyle(session.phase == .won ? store.theme.accent : store.theme.mine)
-
       VStack(spacing: 5) {
         Text(title)
           .font(.rubik(23, weight: .semibold))
-        Text(session.phase == .won ? session.elapsedSeconds.clockString : "Try a fresh board")
-          .font(.system(size: 14, weight: .medium, design: .monospaced))
+        Text("Difficulty: \(session.difficulty.title)")
+          .font(.rubik(13, weight: .regular))
           .foregroundStyle(store.theme.muted)
       }
 
-      if session.phase == .won {
-        let best = Array(store.records(for: session.difficulty).prefix(5))
-        if !best.isEmpty {
-          VStack(spacing: 6) {
-            SectionHeader(title: "Best times", theme: store.theme)
-            ForEach(Array(best.enumerated()), id: \.element.id) { index, record in
-              HStack {
-                Text("\(index + 1)").foregroundStyle(store.theme.muted)
-                Text(record.seconds.clockString).monospacedDigit()
-                Spacer()
-                if record.id == session.completionRecord?.id {
-                  Text("NEW").font(.rubik(9, weight: .bold))
-                    .foregroundStyle(store.theme.accent)
-                }
-              }
-              .font(.rubik(12, weight: .medium))
+      let best = Array(store.records(for: session.difficulty).prefix(10))
+      if !best.isEmpty {
+        VStack(spacing: 2) {
+          ForEach(Array(best.enumerated()), id: \.element.id) { index, record in
+            HStack(spacing: 8) {
+              Text("\(index + 1).")
+              Text(Self.dateFormatter.string(from: record.date))
+              Spacer()
+              Text(record.seconds.androidDurationString).monospacedDigit()
             }
+            .font(.rubik(12, weight: .regular))
+            .foregroundStyle(
+              record.id == session.completionRecord?.id
+                ? store.theme.background
+                : store.theme.foreground.opacity(0.84)
+            )
+            .padding(.horizontal, 8)
+            .frame(height: 25)
+            .background(
+              record.id == session.completionRecord?.id
+                ? store.theme.covered : Color.clear
+            )
           }
-          .padding(12)
-          .background(RoundedRectangle(cornerRadius: 13).fill(store.theme.background))
         }
       }
 
-      HStack(spacing: 10) {
-        Button("Home", action: onHome)
-          .buttonStyle(CleanButtonStyle(theme: store.theme))
-        Button("Play again", action: onRestart)
-          .buttonStyle(CleanButtonStyle(theme: store.theme, filled: true))
-      }
+      Button("Got it!", action: onDismiss)
+        .buttonStyle(AndroidPillButtonStyle(theme: store.theme))
+        .accessibilityIdentifier("game.dismissResult")
     }
     .foregroundStyle(store.theme.foreground)
-    .padding(22)
+    .padding(20)
     .frame(maxWidth: 360)
-    .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(store.theme.surface))
-    .overlay(
-      RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(
-        store.theme.muted.opacity(0.25), lineWidth: 1)
-    )
-    .shadow(color: .black.opacity(0.22), radius: 26, y: 12)
+    .background(GlassRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true))
   }
+
+  private static let dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "d MMM yyyy"
+    return formatter
+  }()
 }
