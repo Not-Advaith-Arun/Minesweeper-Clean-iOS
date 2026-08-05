@@ -59,7 +59,9 @@ jobs:
           test -f "$PROJECT/xcshareddata/xcschemes/$SCHEME.xcscheme"
 
       - name: Run portable engine tests
-        run: swift test --parallel
+        # Board-generation tests enforce wall-clock budgets, so they must not
+        # compete with the other generator-heavy cases for shared runner CPU.
+        run: swift test
 
       - name: Select and boot an iPhone simulator
         id: simulator
