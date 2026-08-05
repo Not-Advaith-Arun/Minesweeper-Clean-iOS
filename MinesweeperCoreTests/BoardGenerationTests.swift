@@ -153,9 +153,13 @@ final class BoardGenerationTests: XCTestCase {
     )
     let solver = NoGuessSolver()
     let scorer = BoardDifficultyScorer()
-    // Hosted runners have variable CPU allocation. Keep the tighter local
-    // performance guard while allowing deterministic CI scheduling overhead.
+    // Hosted runners and simulator XCTest processes have variable CPU allocation.
+    // Keep the tighter performance guard for normal local and on-device runs.
+#if targetEnvironment(simulator)
+    let timeBudget = 4.0
+#else
     let timeBudget = ProcessInfo.processInfo.environment["CI"] == "true" ? 4.0 : 2.0
+#endif
     let samples: [(CellCoordinate, UInt64)] = [
       (CellCoordinate(row: 0, column: 0), 90_999),
       (CellCoordinate(row: 16, column: 9), 91_000),
