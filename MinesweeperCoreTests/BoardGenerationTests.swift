@@ -145,6 +145,45 @@ final class BoardGenerationTests: XCTestCase {
     XCTAssertGreaterThan(BoardDifficultyScorer().threeBV(board), 0)
   }
 
+  func testExtremeGeneratorIsFastVerifiedAndChallengingAcrossOpenings() throws {
+    let configuration = Difficulty.extreme.configuration
+    let generator = HardNoGuessBoardGenerator(
+      maximumAttempts: 2_048,
+      randomAttemptsBeforeFallback: 1_920
+    )
+    let solver = NoGuessSolver()
+    let scorer = BoardDifficultyScorer()
+    let samples: [(CellCoordinate, UInt64)] = [
+      (CellCoordinate(row: 0, column: 0), 90_999),
+      (CellCoordinate(row: 16, column: 9), 91_000),
+      (CellCoordinate(row: 21, column: 12), 91_001),
+      (CellCoordinate(row: 26, column: 15), 91_002),
+      (CellCoordinate(row: 31, column: 17), 91_003),
+    ]
+
+    for (firstReveal, seed) in samples {
+      let startedAt = Date()
+      let board = try generator.generate(
+        configuration: configuration,
+        firstReveal: firstReveal,
+        seed: seed
+      )
+      let elapsed = Date().timeIntervalSince(startedAt)
+      let report = solver.verify(board, firstReveal: firstReveal)
+
+      XCTAssertEqual(board.configuration, configuration)
+      XCTAssertEqual(board.mines.count, 150)
+      XCTAssertFalse(board.isMine(at: firstReveal))
+      XCTAssertTrue(configuration.neighbors(of: firstReveal).allSatisfy {
+        !board.isMine(at: $0)
+      })
+      XCTAssertTrue(report.isSolved)
+      XCTAssertGreaterThanOrEqual(scorer.threeBV(board), 150)
+      XCTAssertGreaterThanOrEqual(report.deductionPasses, 20)
+      XCTAssertLessThan(elapsed, 2.0, "Extreme generation took \(elapsed)s")
+    }
+  }
+
   /// Runs three boards per preset normally. Set MINESWEEPER_EXTENDED_TESTS=1 for 250 per preset,
   /// or set it to an explicit larger iteration count (for example 1000) for the overnight gate.
   func testBulkNoGuessGenerationAcrossPresets() throws {
@@ -173,5 +212,51 @@ final class BoardGenerationTests: XCTestCase {
         )
       }
     }
+  }
+
+  func testProductionGenerationPoliciesAreVerifiedAndChallenging() throws {
+    let scorer = BoardDifficultyScorer()
+    var scores: [Difficulty: [Int]] = [:]
+
+    for (difficultyIndex, difficulty) in Difficulty.allCases.enumerated() {
+      let configuration = difficulty.configuration
+      let generator: any BoardGenerating = switch difficulty {
+      case .extreme:
+        HardNoGuessBoardGenerator(maximumAttempts: 2_048, randomAttemptsBeforeFallback: 1_920)
+      case .hard, .huge:
+        NoGuessBoardGenerator(maximumAttempts: 4_096, randomAttemptsBeforeFallback: 96)
+      case .beginner, .easy, .medium:
+        NoGuessBoardGenerator(maximumAttempts: 2_048, randomAttemptsBeforeFallback: 64)
+      }
+
+      for iteration in 0..<3 {
+        let firstReveal = CellCoordinate(
+          row: (configuration.height / 2 + iteration * 5) % configuration.height,
+          column: (configuration.width / 2 + iteration * 3) % configuration.width
+        )
+        let board = try generator.generate(
+          configuration: configuration,
+          firstReveal: firstReveal,
+          seed: UInt64(90_000 + difficultyIndex * 100 + iteration)
+        )
+        XCTAssertFalse(board.isMine(at: firstReveal), difficulty.rawValue)
+        XCTAssertTrue(
+          configuration.neighbors(of: firstReveal).allSatisfy { !board.isMine(at: $0) },
+          difficulty.rawValue
+        )
+        XCTAssertTrue(
+          NoGuessSolver().verify(board, firstReveal: firstReveal).isSolved,
+          difficulty.rawValue
+        )
+        scores[difficulty, default: []].append(scorer.threeBV(board))
+      }
+    }
+
+    let averages = scores.mapValues { values in values.reduce(0, +) / values.count }
+    print("Production 3BV averages: \(averages)")
+    XCTAssertGreaterThan(averages[.medium, default: 0], averages[.easy, default: 0])
+    XCTAssertGreaterThan(averages[.hard, default: 0], averages[.medium, default: 0])
+    XCTAssertGreaterThan(averages[.huge, default: 0], averages[.hard, default: 0])
+    XCTAssertGreaterThan(averages[.extreme, default: 0], averages[.huge, default: 0])
   }
 }

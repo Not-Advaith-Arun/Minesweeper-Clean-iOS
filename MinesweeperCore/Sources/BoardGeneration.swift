@@ -584,6 +584,77 @@ public struct HardNoGuessBoardGenerator: BoardGenerating, Sendable {
     var bestBoard: GeneratedBoard?
     var bestScore = Int.min
 
+    // At Extreme's 26% density, verified random layouts are vanishingly rare.
+    // Sampling thousands of them both blocked the first reveal for close to a
+    // minute and eventually selected a trivial compact-band fallback. Diagonal
+    // modular fronts are constructive: the protected zero opens one end of a
+    // deduction chain, while the repeated fronts keep mines distributed across
+    // the board. The small symmetry family covers every first-reveal coordinate
+    // in the production Extreme grid and is still independently verified here.
+    if configuration == Difficulty.extreme.configuration {
+      let patterns = [
+        (modulus: 11, row: 1, column: 3),
+        (modulus: 11, row: 3, column: 1),
+        (modulus: 11, row: 1, column: 8),
+        (modulus: 11, row: 8, column: 10),
+        (modulus: 11, row: 2, column: 5),
+        (modulus: 11, row: 5, column: 2),
+        (modulus: 11, row: 4, column: 7),
+        (modulus: 11, row: 7, column: 4),
+        (modulus: 13, row: 1, column: 5),
+        (modulus: 13, row: 5, column: 1),
+        (modulus: 13, row: 2, column: 7),
+        (modulus: 13, row: 7, column: 2),
+        (modulus: 13, row: 3, column: 8),
+        (modulus: 13, row: 8, column: 3),
+        (modulus: 17, row: 3, column: 7),
+        (modulus: 17, row: 7, column: 3),
+        (modulus: 17, row: 5, column: 9),
+        (modulus: 17, row: 9, column: 5),
+      ]
+      let rotation = Int(seed % UInt64(patterns.count))
+      var hardestBoard: GeneratedBoard?
+      var hardestThreeBV = Int.min
+      var hardestPasses = Int.min
+      for offset in patterns.indices {
+        let pattern = patterns[(rotation + offset) % patterns.count]
+        let mines = modularMineSet(
+          candidates: candidates,
+          mineCount: configuration.mineCount,
+          modulus: pattern.modulus,
+          rowMultiplier: pattern.row,
+          columnMultiplier: pattern.column
+        )
+        let board = GeneratedBoard(configuration: configuration, seed: seed, mines: mines)
+        let report = solver.verify(board, firstReveal: firstReveal)
+        guard report.isSolved else { continue }
+        let threeBV = scorer.threeBV(board)
+        // 3BV is the primary workload measure. Deduction passes break ties so
+        // boards with longer logical chains win over equally sized openings.
+        if threeBV > hardestThreeBV
+          || (threeBV == hardestThreeBV && report.deductionPasses > hardestPasses)
+        {
+          hardestBoard = board
+          hardestThreeBV = threeBV
+          hardestPasses = report.deductionPasses
+        }
+      }
+      if let hardestBoard, hardestThreeBV >= 150, hardestPasses >= 20 {
+        // The modular boards are reliable seeds at this unusually high mine
+        // density, but returning one directly exposes its diagonal bands to
+        // the player. Run a seeded local search over mine/safe swaps and retain
+        // only layouts that the no-guess solver can still finish. This keeps
+        // the constructive reliability while removing the visible template.
+        return randomizeExtremeSeed(
+          hardestBoard,
+          candidates: candidates,
+          firstReveal: firstReveal,
+          random: &random
+        )
+      }
+      throw BoardGenerationError.unableToGenerateNoGuessBoard(attempts: patterns.count)
+    }
+
     for _ in 0..<randomAttemptsBeforeFallback {
       shuffle(&candidates, using: &random)
       consider(
@@ -636,6 +707,110 @@ public struct HardNoGuessBoardGenerator: BoardGenerating, Sendable {
     }
   }
 
+  private func randomizeExtremeSeed(
+    _ seedBoard: GeneratedBoard,
+    candidates: [CellCoordinate],
+    firstReveal: CellCoordinate,
+    random: inout SplitMix64
+  ) -> GeneratedBoard {
+    var current = seedBoard
+    var currentReport = solver.verify(current, firstReveal: firstReveal)
+    var currentThreeBV = scorer.threeBV(current)
+    var currentPatternPenalty = patternPenalty(current)
+    var acceptedMutationCount = 0
+
+    // A bounded search keeps first-click latency predictable. Accepting a
+    // small difficulty step down lets the walk escape its initial template;
+    // the returned board still has a deliberately high minimum workload.
+    for _ in 0..<6 {
+      var revisedMines = current.mines
+      // Mutate several cells per verification so every accepted step breaks
+      // a meaningful part of the seed's visual rhythm.
+      for _ in 0..<3 {
+        // Set iteration order is intentionally randomized by Swift. Sort before
+        // seeded selection so an identical game seed always creates the same
+        // board across launches and test processes.
+        let mines = revisedMines.sorted()
+        guard !mines.isEmpty else { break }
+        revisedMines.remove(mines[random.next(upperBound: mines.count)])
+        for _ in 0..<24 {
+          let candidate = candidates[random.next(upperBound: candidates.count)]
+          if !revisedMines.contains(candidate) {
+            revisedMines.insert(candidate)
+            break
+          }
+        }
+      }
+      guard revisedMines.count == current.configuration.mineCount else { continue }
+      let proposal = GeneratedBoard(
+        configuration: current.configuration,
+        seed: current.seed,
+        mines: revisedMines
+      )
+      let report = solver.verify(proposal, firstReveal: firstReveal)
+      guard report.isSolved else { continue }
+      let threeBV = scorer.threeBV(proposal)
+      guard threeBV >= max(300, currentThreeBV - 2), report.deductionPasses >= 20 else { continue }
+      let penalty = patternPenalty(proposal)
+      let improvesWalk = penalty < currentPatternPenalty
+        || threeBV > currentThreeBV + 8
+        || (penalty == currentPatternPenalty && report.deductionPasses > currentReport.deductionPasses)
+      guard improvesWalk else { continue }
+
+      current = proposal
+      acceptedMutationCount += 1
+      currentReport = report
+      currentThreeBV = threeBV
+      currentPatternPenalty = penalty
+    }
+#if DEBUG
+    if ProcessInfo.processInfo.environment["MINESWEEPER_GENERATOR_DIAGNOSTICS"] == "1" {
+      print("Extreme accepted mutations: \(acceptedMutationCount), penalty: \(patternPenalty(seedBoard)) -> \(patternPenalty(current))")
+    }
+#endif
+    // Return the end of the verified random walk, not merely the highest 3BV
+    // intermediate; otherwise a visually regular seed can win by a few score
+    // points and undo the purpose of the mutation pass.
+    return current
+  }
+
+  /// Penalizes the conspicuous horizontal/vertical mine runs produced by a
+  /// constructive seed. Random-looking high-density boards naturally retain
+  /// clusters, but not a screen full of equally spaced bars.
+  private func patternPenalty(_ board: GeneratedBoard) -> Int {
+    var penalty = 0
+    func addRun(_ length: Int) {
+      guard length >= 3 else { return }
+      penalty += length * length
+    }
+
+    for row in 0..<board.configuration.height {
+      var run = 0
+      for column in 0..<board.configuration.width {
+        if board.isMine(at: CellCoordinate(row: row, column: column)) {
+          run += 1
+        } else {
+          addRun(run)
+          run = 0
+        }
+      }
+      addRun(run)
+    }
+    for column in 0..<board.configuration.width {
+      var run = 0
+      for row in 0..<board.configuration.height {
+        if board.isMine(at: CellCoordinate(row: row, column: column)) {
+          run += 1
+        } else {
+          addRun(run)
+          run = 0
+        }
+      }
+      addRun(run)
+    }
+    return penalty
+  }
+
   private func allCoordinates(in configuration: BoardConfiguration) -> [CellCoordinate] {
     (0..<configuration.cellCount).compactMap(configuration.coordinate)
   }
@@ -679,6 +854,26 @@ public struct HardNoGuessBoardGenerator: BoardGenerating, Sendable {
         return row * row + column * column
       },
     ]
+  }
+
+  private func modularMineSet(
+    candidates: [CellCoordinate],
+    mineCount: Int,
+    modulus: Int,
+    rowMultiplier: Int,
+    columnMultiplier: Int
+  ) -> Set<CellCoordinate> {
+    func residue(_ coordinate: CellCoordinate) -> Int {
+      let value = coordinate.row * rowMultiplier + coordinate.column * columnMultiplier
+      let remainder = value % modulus
+      return remainder >= 0 ? remainder : remainder + modulus
+    }
+    let ordered = candidates.sorted { left, right in
+      let leftResidue = residue(left)
+      let rightResidue = residue(right)
+      return leftResidue == rightResidue ? left < right : leftResidue < rightResidue
+    }
+    return Set(ordered.prefix(mineCount))
   }
 }
 
