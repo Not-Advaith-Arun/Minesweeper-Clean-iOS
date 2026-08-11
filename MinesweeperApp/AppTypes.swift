@@ -86,6 +86,7 @@ enum BoardCellVisual: Equatable {
   case covered
   case revealed(Int)
   case flagged
+  case flaggedMine
   case mine(triggered: Bool)
   case wrongFlag
 }

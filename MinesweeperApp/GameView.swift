@@ -81,17 +81,23 @@ struct GameView: View {
       }
 
       if showResult, session.phase == .won {
-        Color.black.opacity(0.32).ignoresSafeArea()
+        Color.black.opacity(store.theme.isAMOLED ? 0.72 : 0.56).ignoresSafeArea()
           .transition(.opacity)
-        ResultCard(
-          session: session,
-          onDismiss: {
-            withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
-              showResult = false
+        VStack(spacing: 12) {
+          WinPixelBurst(theme: store.theme)
+            .frame(width: 190, height: 104)
+            .transition(.scale(scale: 0.72).combined(with: .opacity))
+          ResultCard(
+            session: session,
+            onDismiss: {
+              withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
+                showResult = false
+              }
             }
-          }
-        )
+          )
+        }
         .padding(24)
+        .offset(y: 26)
         .transition(
           .asymmetric(
             insertion: .scale(scale: 0.96).combined(with: .opacity),
@@ -451,15 +457,14 @@ private struct ResultCard: View {
   let onDismiss: () -> Void
 
   private var title: String {
-    let options = ["Neat!", "Clean sweep!", "Perfect!", "Nicely done!", "All clear!"]
-    return options[session.elapsedSeconds % options.count]
+    "Sensational!"
   }
 
   var body: some View {
-    VStack(spacing: 16) {
+    VStack(spacing: 12) {
       VStack(spacing: 5) {
         Text(title)
-          .font(.rubik(23, weight: .semibold))
+          .font(.rubik(17, weight: .semibold))
         Text("Difficulty: \(session.difficulty.title)")
           .font(.rubik(13, weight: .regular))
           .foregroundStyle(store.theme.muted)
@@ -482,7 +487,7 @@ private struct ResultCard: View {
                 : store.theme.foreground.opacity(0.84)
             )
             .padding(.horizontal, 8)
-            .frame(height: 25)
+            .frame(height: 22)
             .background(
               record.id == session.completionRecord?.id
                 ? store.theme.covered : Color.clear
@@ -496,7 +501,7 @@ private struct ResultCard: View {
         .accessibilityIdentifier("game.dismissResult")
     }
     .foregroundStyle(store.theme.foreground)
-    .padding(20)
+    .padding(17)
     .frame(maxWidth: 360)
     .background(GlassRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true))
   }
@@ -507,4 +512,48 @@ private struct ResultCard: View {
     formatter.dateFormat = "d MMM yyyy"
     return formatter
   }()
+}
+
+@MainActor
+private struct WinPixelBurst: View {
+  let theme: AppTheme
+
+  private static let pixels: [(x: Int, y: Int)] = [
+    (3, 0), (7, 0),
+    (1, 1), (4, 1), (6, 1), (9, 1),
+    (2, 2), (3, 2), (5, 2), (7, 2), (8, 2),
+    (0, 3), (2, 3), (4, 3), (5, 3), (6, 3), (8, 3), (10, 3),
+    (2, 4), (3, 4), (5, 4), (7, 4), (8, 4),
+    (1, 5), (4, 5), (6, 5), (9, 5),
+    (3, 6), (7, 6),
+  ]
+
+  var body: some View {
+    Canvas { context, size in
+      let usesLightCanvas = ["diletto", "rossa", "nennau"].contains(theme.id)
+      let pixelColor = usesLightCanvas ? Color.black : theme.foreground
+      let baseOpacity: CGFloat = usesLightCanvas ? 0.24 : 0.16
+      let unit = min(size.width / 12, size.height / 7.5)
+      let contentWidth = unit * 11
+      let contentHeight = unit * 7
+      let origin = CGPoint(
+        x: (size.width - contentWidth) / 2,
+        y: (size.height - contentHeight) / 2
+      )
+      for pixel in Self.pixels {
+        let variance = CGFloat((pixel.x * 7 + pixel.y * 11) % 4) * 0.035
+        let rect = CGRect(
+          x: origin.x + CGFloat(pixel.x) * unit,
+          y: origin.y + CGFloat(pixel.y) * unit,
+          width: unit * 0.72,
+          height: unit * 0.72
+        )
+        context.fill(
+          Path(rect),
+          with: .color(pixelColor.opacity(baseOpacity + variance))
+        )
+      }
+    }
+    .accessibilityHidden(true)
+  }
 }

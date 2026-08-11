@@ -69,7 +69,7 @@ final class AppStore {
       selectedDifficulty = previewDifficulty
       records = Self.previewRecords(for: previewDifficulty)
       navigation = [.game(previewDifficulty, resume: false)]
-    } else if ["lost", "near_win", "near_loss"].contains(
+    } else if ["lost", "near_win", "near_loss", "topology"].contains(
       ProcessInfo.processInfo.environment["MINESWEEPER_UI_TEST_GAME_STATE"]
     ) {
       selectedDifficulty = previewDifficulty

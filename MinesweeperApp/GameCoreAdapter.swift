@@ -322,6 +322,7 @@ final class GameSessionController {
         if cell.isRevealed {
           if cell.isMine {
             let coordinate = engine.configuration.coordinate(for: index)
+            if coordinate != explodedMine, cell.isFlagged { return .flaggedMine }
             return .mine(triggered: coordinate == explodedMine)
           }
           return .revealed(cell.adjacentMineCount)
@@ -350,18 +351,53 @@ final class GameSessionController {
     -> (engine: GameEngine, explodedMine: CellCoordinate?)?
   {
     guard let rawState = ProcessInfo.processInfo.environment["MINESWEEPER_UI_TEST_GAME_STATE"],
-      ["won", "lost", "near_win", "near_loss"].contains(rawState)
+      ["won", "lost", "near_win", "near_loss", "topology"].contains(rawState)
     else { return nil }
 
     let configuration = difficulty.coreValue.configuration
     let centerIndex = configuration.index(
       for: CellCoordinate(row: max(0, configuration.height / 2 - 1), column: configuration.width / 2)
     )!
-    var mineIndices: Set<Int> = rawState == "near_loss" ? [centerIndex] : []
+    let topologyIsolatedIndex = configuration.index(
+      for: CellCoordinate(row: 1, column: 1)
+    )!
+    let topologyDiagonalIndices = Set([
+      configuration.index(for: CellCoordinate(row: 5, column: 2))!,
+      configuration.index(for: CellCoordinate(row: 6, column: 3))!,
+    ])
+    let topologyProtectedIndices: Set<Int> = rawState == "topology"
+      ? Set(
+        [topologyIsolatedIndex] +
+          configuration.neighbors(of: CellCoordinate(row: 1, column: 1)).compactMap(
+            configuration.index(for:)
+          ) + Array(topologyDiagonalIndices)
+      )
+      : []
+    let topologyMineIndices = [
+      CellCoordinate(row: 0, column: 4),
+      CellCoordinate(row: 0, column: 5),
+      CellCoordinate(row: 2, column: 4),
+      CellCoordinate(row: 3, column: 5),
+      CellCoordinate(row: 4, column: 6),
+      CellCoordinate(row: 5, column: 5),
+      CellCoordinate(row: 7, column: 0),
+      CellCoordinate(row: 7, column: 1),
+      CellCoordinate(row: 8, column: 4),
+      CellCoordinate(row: 9, column: 5),
+    ].compactMap(configuration.index(for:))
+    var mineIndices: Set<Int> = switch rawState {
+    case "near_loss": [centerIndex]
+    case "topology": Set(topologyMineIndices.prefix(configuration.mineCount))
+    default: []
+    }
     var candidate = 0
     while mineIndices.count < configuration.mineCount {
       let index = (candidate * 37 + 11) % configuration.cellCount
-      if rawState != "near_win" || index != centerIndex { mineIndices.insert(index) }
+      if (rawState != "near_win" || index != centerIndex),
+        !topologyProtectedIndices.contains(index)
+      {
+        mineIndices.insert(index)
+      }
       candidate += 1
     }
     let explodedIndex = mineIndices.sorted().first
@@ -374,17 +410,23 @@ final class GameSessionController {
     let cells = (0..<configuration.cellCount).map { index -> Cell in
       let coordinate = configuration.coordinate(for: index)!
       let isMine = mineIndices.contains(index)
-      let isFlagged = index == correctFlagIndex || index == wrongFlagIndex
+      let isFlagged = rawState == "topology"
+        ? isMine
+        : index == correctFlagIndex || index == wrongFlagIndex
       let adjacent = configuration.neighbors(of: coordinate).reduce(0) { count, neighbor in
         count + (configuration.index(for: neighbor).map(mineIndices.contains) == true ? 1 : 0)
       }
+      let isTopologyReveal = index == topologyIsolatedIndex
+        || (coordinate.row >= 4 && !topologyDiagonalIndices.contains(index))
       return Cell(
         isMine: isMine,
         isRevealed: isFlagged
           ? false
-          : isMine
-            ? rawState == "lost"
-            : !(rawState == "near_win" && index == centerIndex),
+          : rawState == "topology"
+            ? isTopologyReveal
+            : isMine
+              ? rawState == "lost"
+              : !(rawState == "near_win" && index == centerIndex),
         isFlagged: isFlagged,
         adjacentMineCount: adjacent
       )

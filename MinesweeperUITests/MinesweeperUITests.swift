@@ -70,6 +70,32 @@ final class MinesweeperUITests: XCTestCase {
     try capture("easy-11-completed")
   }
 
+  func testCaptureRestartTransition() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "kawa"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "near_loss"
+    app.launch()
+
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 4))
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.45)).tap()
+    XCTAssertTrue(app.buttons["game.startNew"].waitForExistence(timeout: 3))
+    try capture("restart-01-finished")
+
+    app.buttons["game.startNew"].tap()
+    wait(0.14)
+    try capture("restart-02-controls-dismiss")
+    wait(0.16)
+    try capture("restart-03-old-board-fade")
+    wait(0.16)
+    try capture("restart-04-center-pulse")
+    wait(0.18)
+    try capture("restart-05-slab-grow")
+    wait(0.36)
+    try capture("restart-06-ready")
+  }
+
   func testCaptureBoardCornerRegression() throws {
     app.terminate()
     app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "pink_amoled"
@@ -102,6 +128,21 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.otherElements["game.board"].waitForExistence(timeout: 4))
     wait(0.5)
     try capture("live-border-corners-fixed")
+  }
+
+  func testCaptureBoardTopologyPolishAcrossThemes() throws {
+    for theme in ["kawa", "pink_amoled", "nennau"] {
+      app.terminate()
+      app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = theme
+      app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+      app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "topology"
+      app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_CELL_BORDERS")
+      app.launch()
+
+      XCTAssertTrue(app.otherElements["game.board"].waitForExistence(timeout: 4))
+      wait(0.35)
+      try capture("topology-polish-\(theme)")
+    }
   }
 
   func testCaptureEasyLossJourney() throws {

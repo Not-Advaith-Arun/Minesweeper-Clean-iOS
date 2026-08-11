@@ -54,7 +54,40 @@ struct BoardPalette {
   let clues: [UIColor]
 
   var flagGlyph: UIColor {
-    background.isVisuallyDark ? background : foreground
+    // Clean One normally lets the page/background color supply the dark flag
+    // silhouette. Some themes, however, pair a dark background with an almost
+    // equally dark flagged surface. Preserve the themed choice when it is
+    // legible and fall back to the highest-contrast neutral when it is not.
+    if background.contrastRatio(with: flagged) >= 3 { return background }
+    return [foreground, UIColor.black, UIColor.white].max {
+      $0.contrastRatio(with: flagged) < $1.contrastRatio(with: flagged)
+    } ?? foreground
+  }
+
+  var coveredMineGlyph: UIColor {
+    // Loss keeps ordinary mines on the covered field. Prefer the theme's
+    // background silhouette when it remains readable (as in Kawa), otherwise
+    // select the strongest neutral contrast so mines never disappear on light
+    // or AMOLED covered colors.
+    if background.contrastRatio(with: covered) >= 3 { return background }
+    return [foreground, UIColor.black, UIColor.white].max {
+      $0.contrastRatio(with: covered) < $1.contrastRatio(with: covered)
+    } ?? UIColor.black
+  }
+
+  var gridLine: UIColor {
+    // The decoded separator colors are intentionally close to the revealed
+    // surface. Applying another low-alpha blend made them disappear entirely.
+    // Nudge the decoded hue only as far as needed to retain the reference's
+    // quiet cross-like cell separators in every light and dark palette.
+    if separator.contrastRatio(with: surface) >= 1.18 { return separator }
+    let target = foreground.contrastRatio(with: surface)
+      >= background.contrastRatio(with: surface) ? foreground : background
+    for amount in stride(from: CGFloat(0.04), through: 0.28, by: 0.04) {
+      let candidate = separator.interpolated(to: target, progress: amount)
+      if candidate.contrastRatio(with: surface) >= 1.18 { return candidate }
+    }
+    return separator.interpolated(to: target, progress: 0.28)
   }
 
   init(theme: AppTheme) {
@@ -131,7 +164,11 @@ private extension UIColor {
     )
   }
 
-  var isVisuallyDark: Bool { relativeLuminance < 0.20 }
+  func contrastRatio(with other: UIColor) -> CGFloat {
+    let lighter = max(relativeLuminance, other.relativeLuminance)
+    let darker = min(relativeLuminance, other.relativeLuminance)
+    return (lighter + 0.05) / (darker + 0.05)
+  }
 
   private var relativeLuminance: CGFloat {
     var red: CGFloat = 0
@@ -415,6 +452,13 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   private var animationSpeed = 100.0
   var animationSpeedPercent: Double { animationSpeed }
   private var revealStartedAt: [Int: CFTimeInterval] = [:]
+  private var revealDurations: [Int: CFTimeInterval] = [:]
+  private var initialRevealStartedAt: CFTimeInterval?
+  private var initialRevealDuration: CFTimeInterval = 0
+  private var initialRevealOrigin: CGPoint?
+  private var restartSnapshot: UIImage?
+  private var restartStartedAt: CFTimeInterval?
+  private var restartDuration: CFTimeInterval = 0
   private var displayLink: CADisplayLink?
   // Every cell in a rendered frame must observe exactly the same animation
   // time. Sampling CACurrentMediaTime() independently for connected neighbors
@@ -462,6 +506,23 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     animationSpeed: Double
   ) {
     let oldBoard = self.board
+    let oldPhase = self.phase
+    let beginsSameSizeRestart = oldPhase != .ready
+      && phase == .ready
+      && oldBoard.columns == board.columns
+      && oldBoard.rows == board.rows
+      && bounds.width > 0
+      && bounds.height > 0
+    let pendingRestartSnapshot: UIImage? = if beginsSameSizeRestart,
+      animationSpeed > 0,
+      !UIAccessibility.isReduceMotionEnabled
+    {
+      UIGraphicsImageRenderer(bounds: bounds).image { renderer in
+        layer.render(in: renderer.cgContext)
+      }
+    } else {
+      nil
+    }
     self.board = board
     self.phase = phase
     self.isLoading = isLoading
@@ -470,10 +531,48 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     let now = CACurrentMediaTime()
     updatePalette(to: palette, at: now)
     let distanceScale = Self.durationScale(for: animationSpeed)
+    if let pendingRestartSnapshot {
+      restartSnapshot = pendingRestartSnapshot
+      restartStartedAt = now
+      restartDuration = 0.88 * distanceScale
+    } else if phase != .ready {
+      restartSnapshot = nil
+      restartStartedAt = nil
+      restartDuration = 0
+    }
+    let startsInitialReveal: Bool = {
+      guard oldPhase == .ready, phase == .playing, let actionCoordinate,
+        actionCoordinate.column >= 0, actionCoordinate.column < board.columns,
+        actionCoordinate.row >= 0, actionCoordinate.row < board.rows
+      else { return false }
+      if case .revealed = board[actionCoordinate.column, actionCoordinate.row] { return true }
+      return false
+    }()
+    if startsInitialReveal,
+      animationSpeed > 0,
+      !UIAccessibility.isReduceMotionEnabled,
+      let actionCoordinate
+    {
+      initialRevealStartedAt = now
+      initialRevealDuration = 0.62 * distanceScale
+      initialRevealOrigin = CGPoint(
+        x: (CGFloat(actionCoordinate.column) + 0.5) * Self.baseCellSize,
+        y: (CGFloat(actionCoordinate.row) + 0.5) * Self.baseCellSize
+      )
+    } else if phase == .ready {
+      initialRevealStartedAt = nil
+      initialRevealOrigin = nil
+      initialRevealDuration = 0
+    }
     for coordinate in changedCoordinates {
       let index = coordinate.row * board.columns + coordinate.column
       guard board.cells.indices.contains(index) else { continue }
       if oldBoard.cells.indices.contains(index), oldBoard.cells[index] != board.cells[index] {
+        // The first opening is one continuous touch-origin surface wipe. Its
+        // final topology is rendered underneath the old ready slab, so adding
+        // per-cell clearing overlays here would reintroduce the checkerboard
+        // intermediate that the global mask is specifically replacing.
+        if startsInitialReveal { continue }
         let delay: Double
         if phase == .lost, case .mine = board.cells[index], let actionCoordinate {
           let dx = Double(coordinate.column - actionCoordinate.column)
@@ -491,6 +590,14 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
           delay = min(0.30, Double(distance) * 0.012)
         }
         revealStartedAt[index] = now + delay * distanceScale
+        // Flags in the reference settle within roughly two 30-fps frames.
+        // Reveals and mine cascades retain their longer surface morph.
+        switch board.cells[index] {
+        case .flagged, .wrongFlag:
+          revealDurations[index] = 0.07 * distanceScale
+        case .covered, .revealed, .flaggedMine, .mine:
+          revealDurations[index] = 0.24 * distanceScale
+        }
       }
     }
     accessibilityLabel = "Minesweeper board, \(board.columns) columns by \(board.rows) rows"
@@ -507,7 +614,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     context.fill(rect)
 
     if phase == .ready {
-      drawReadyBoard(in: bounds)
+      if !drawRestartTransition(context: context) {
+        drawReadyBoard(in: bounds)
+      }
       return
     }
 
@@ -541,7 +650,11 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     palette.covered.setFill()
     for row in firstRow...lastRow {
       for column in firstColumn...lastColumn {
-        guard case .covered = board[column, row] else { continue }
+        switch board[column, row] {
+        case .covered, .mine(triggered: false): break
+        case .revealed, .flagged, .flaggedMine, .mine(triggered: true), .wrongFlag:
+          continue
+        }
         let cellRect = CGRect(
           x: CGFloat(column) * Self.baseCellSize,
           y: CGFloat(row) * Self.baseCellSize,
@@ -564,12 +677,19 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       firstRow: firstRow,
       lastRow: lastRow
     )
-    drawDiagonalCoverConnectors(
+    drawFlagRegions(
       firstColumn: firstColumn,
       lastColumn: lastColumn,
       firstRow: firstRow,
       lastRow: lastRow
     )
+    drawCoveredMineGlyphs(
+      firstColumn: firstColumn,
+      lastColumn: lastColumn,
+      firstRow: firstRow,
+      lastRow: lastRow
+    )
+    drawInitialRevealOverlay(context: context)
   }
 
   private func drawCell(_ cell: BoardCellVisual, column: Int, row: Int, context: CGContext) {
@@ -605,32 +725,20 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
           visuallyRevealed(column: column, row: row)
         }
       )
-      drawGridLine(in: rect, context: context)
+      drawGridLine(in: rect, column: column, row: row, context: context)
       if count > 0 { drawNumber(count, in: rect, scale: revealScale) }
       drawClearingOverlay(in: rect, progress: progress)
-    case .flagged:
-      palette.flagged.setFill()
-      drawConnectedCover(
-        in: rect,
-        fillRect: inset,
-        radius: radius,
-        column: column,
-        row: row,
-        scale: 1,
-        matchesNeighbor: { [self] column, row in
-          isFlagged(column: column, row: row)
-        }
-      )
-      drawFlag(
-        in: rect,
-        color: palette.flagGlyph,
-        scale: flagScale(for: progress) * 0.55
-      )
-      // Clean One morphs the covered surface away to expose the flag tile.
-      // Reusing the reveal mask keeps the tile, its rounded boundary and the
-      // glyph on one animation clock instead of popping topology immediately.
-      drawClearingOverlay(in: rect, progress: progress)
+    case .flagged, .flaggedMine:
+      // Flags are composited as a final region-wide pass. That lets both the
+      // dark moat and the flagged surface share one clean orthogonal topology
+      // instead of leaving a square revealed-cell outline behind.
+      break
     case .mine(let triggered):
+      if !triggered {
+        // Ordinary mines retain the connected covered-color field beneath
+        // them and are composited in one final glyph pass after that field.
+        break
+      }
       if progress <= 0 {
         palette.covered.setFill()
         drawConnectedCover(
@@ -646,30 +754,19 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       // Ordinary mines float cleanly on the shared revealed surface. Only the
       // detonated mine receives an inverse, inset rounded plate; a full-cell
       // fill created the harsh square blocks visible in the old loss screen.
-      if triggered {
-        palette.mine.setFill()
-        UIBezierPath(roundedRect: inset, cornerRadius: radius).fill()
-      }
+      palette.mine.setFill()
+      UIBezierPath(roundedRect: inset, cornerRadius: radius).fill()
       drawMine(
         in: rect,
-        color: triggered ? palette.background : palette.mine,
-        holeColor: triggered ? palette.mine : palette.surface,
+        color: palette.background,
+        holeColor: palette.mine,
         scale: numberScale(for: progress)
       )
-      drawClearingOverlay(in: rect, progress: progress)
+      // The detonated inverse tile and its mine glyph appear atomically in the
+      // source. Leaving the generic clearing overlay here put a shrinking
+      // covered-color square on top of the red tile for several frames.
     case .wrongFlag:
-      palette.flagged.withAlphaComponent(0.56).setFill()
-      drawConnectedCover(
-        in: rect,
-        fillRect: inset,
-        radius: radius,
-        column: column,
-        row: row,
-        scale: 1,
-        matchesNeighbor: { [self] column, row in isFlagLike(column: column, row: row) }
-      )
-      drawFlag(in: rect, color: palette.flagGlyph, scale: 0.55)
-      drawCross(in: rect)
+      break
     }
 
     if showsBorders {
@@ -679,41 +776,311 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     }
   }
 
+  /// Flags replace covered cells with a muted inset surface surrounded by a
+  /// slim revealed-color moat. Rendering the whole group after the covered
+  /// pass keeps that moat rounded against unrevealed cells and lets adjacent
+  /// orthogonal flags read as one deliberate visual region.
+  private func drawFlagRegions(
+    firstColumn: Int,
+    lastColumn: Int,
+    firstRow: Int,
+    lastRow: Int
+  ) {
+    let radius = Self.baseCellSize * 0.09
+    let tileInset = Self.baseCellSize * 0.08
+
+    // A flag placed in the unrevealed slab needs the covered color beneath the
+    // rounded moat corners. A flag already surrounded by revealed cells keeps
+    // the shared revealed surface beneath it.
+    palette.covered.setFill()
+    for row in firstRow...lastRow {
+      for column in firstColumn...lastColumn where isFlagLike(column: column, row: row) {
+        drawFlagCoveredBackdrop(column: column, row: row, radius: radius)
+      }
+    }
+
+    // Outer revealed-color moat.
+    palette.surface.setFill()
+    for row in firstRow...lastRow {
+      for column in firstColumn...lastColumn where isFlagLike(column: column, row: row) {
+        let rect = cellRect(column: column, row: row)
+        drawConnectedCover(
+          in: rect,
+          fillRect: rect,
+          radius: radius,
+          column: column,
+          row: row,
+          scale: 1,
+          matchesNeighbor: { [self] column, row in isFlagLike(column: column, row: row) }
+        )
+      }
+    }
+    // Inset flagged surface. Unlike covered cells, flags merge only across a
+    // shared horizontal or vertical edge; diagonal flags remain distinct.
+    palette.flagged.setFill()
+    for row in firstRow...lastRow {
+      for column in firstColumn...lastColumn where isFlagLike(column: column, row: row) {
+        let rect = cellRect(column: column, row: row)
+        drawConnectedCover(
+          in: rect,
+          fillRect: rect.insetBy(dx: tileInset, dy: tileInset),
+          radius: radius,
+          column: column,
+          row: row,
+          scale: 1,
+          matchesNeighbor: { [self] column, row in isFlagLike(column: column, row: row) }
+        )
+      }
+    }
+    // Glyphs and the short placement morph sit above the completed topology.
+    for row in firstRow...lastRow {
+      for column in firstColumn...lastColumn where isFlagLike(column: column, row: row) {
+        let rect = cellRect(column: column, row: row)
+        let index = row * board.columns + column
+        let progress = revealProgress(for: index)
+        guard progress > 0 else {
+          if case .flaggedMine = board[column, row] {
+            drawFlag(in: rect, color: palette.flagGlyph, scale: 0.55)
+            continue
+          }
+          if case .wrongFlag = board[column, row] {
+            drawFlag(in: rect, color: palette.flagGlyph, scale: 0.55)
+            continue
+          }
+          // Keep a scheduled flag completely covered until its turn. The
+          // reference then reveals the tile and glyph together in one frame,
+          // avoiding a blank-gray intermediate as the center clears.
+          drawClearingOverlay(in: rect, progress: 0)
+          continue
+        }
+        if case .flaggedMine = board[column, row] {
+          drawMine(
+            in: rect,
+            color: palette.flagGlyph,
+            holeColor: palette.flagged,
+            scale: 0.62
+          )
+        } else {
+          drawFlag(
+            in: rect,
+            color: palette.flagGlyph,
+            scale: 0.55
+          )
+        }
+        if case .wrongFlag = board[column, row] { drawCross(in: rect) }
+        if showsBorders {
+          guard let context = UIGraphicsGetCurrentContext() else { continue }
+          context.setStrokeColor(palette.separator.cgColor)
+          context.setLineWidth(0.7)
+          context.stroke(rect.insetBy(dx: 0.55, dy: 0.55))
+        }
+      }
+    }
+  }
+
+  private func drawCoveredMineGlyphs(
+    firstColumn: Int,
+    lastColumn: Int,
+    firstRow: Int,
+    lastRow: Int
+  ) {
+    for row in firstRow...lastRow {
+      for column in firstColumn...lastColumn {
+        guard case .mine(triggered: false) = board[column, row] else { continue }
+        let index = row * board.columns + column
+        let progress = revealProgress(for: index)
+        guard progress > 0 else { continue }
+        drawMine(
+          in: cellRect(column: column, row: row),
+          color: palette.coveredMineGlyph,
+          holeColor: palette.covered,
+          scale: numberScale(for: progress)
+        )
+      }
+    }
+  }
+
   private func drawReadyBoard(in rect: CGRect) {
-    let boardRect = rect
+    drawReadySlab(in: rect)
+    drawReadyPrompt(in: rect, alpha: 1)
+  }
+
+  private func drawReadySlab(in boardRect: CGRect) {
     palette.covered.setFill()
     UIBezierPath(
       roundedRect: boardRect,
       cornerRadius: min(boardRect.width, boardRect.height) * 0.012
     ).fill()
+  }
 
+  private func drawReadyPrompt(in rect: CGRect, alpha: CGFloat) {
+    guard alpha > 0 else { return }
     let attributes: [NSAttributedString.Key: Any] = [
       // The ready board is fitted to the viewport, so derive type from canvas
       // width as well. This keeps the rendered prompt the same size on Easy,
       // Medium and the taller boards instead of making it huge on Easy.
       .font: UIFont(name: "Rubik-Regular", size: rect.width * 0.045)
         ?? UIFont.systemFont(ofSize: rect.width * 0.045, weight: .regular),
-      .foregroundColor: palette.background.withAlphaComponent(0.56),
+      .foregroundColor: palette.background.withAlphaComponent(0.56 * alpha),
     ]
     // Normal board generation completes within a frame. Retain the Android
     // prompt instead of flashing a one-frame loading label before the reveal.
     let string = NSString(string: "Tap to begin.")
     let size = string.size(withAttributes: attributes)
     string.draw(
-      at: CGPoint(x: boardRect.midX - size.width / 2, y: boardRect.midY - size.height / 2),
+      at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
       withAttributes: attributes
     )
   }
 
-  private func drawGridLine(in rect: CGRect, context: CGContext) {
+  /// Reveals the already-composited final board through one circular wave
+  /// centered on the first touch. Intersecting that wave with the final cell
+  /// topology yields the same connected growing landmass as the reference;
+  /// cells that remain covered simply stay covered beneath the mask.
+  private func drawInitialRevealOverlay(context: CGContext) {
+    guard let startedAt = initialRevealStartedAt,
+      let origin = initialRevealOrigin,
+      initialRevealDuration > 0
+    else { return }
+
+    let elapsed = (renderTimestamp ?? CACurrentMediaTime()) - startedAt
+    let progress = CGFloat(min(1, max(0, elapsed / initialRevealDuration)))
+    guard progress < 1 else { return }
+
+    // Hold for just over one display frame so the press reads before the
+    // surface begins opening, then grow the radius smoothly to the farthest
+    // board corner.
+    let waveDelay: CGFloat = 0.07
+    let waveProgress = Self.smoothStep(
+      min(1, max(0, (progress - waveDelay) / (1 - waveDelay)))
+    )
+    let corners = [
+      CGPoint(x: bounds.minX, y: bounds.minY),
+      CGPoint(x: bounds.maxX, y: bounds.minY),
+      CGPoint(x: bounds.minX, y: bounds.maxY),
+      CGPoint(x: bounds.maxX, y: bounds.maxY),
+    ]
+    let maximumRadius = corners.map { hypot($0.x - origin.x, $0.y - origin.y) }.max()
+      ?? hypot(bounds.width, bounds.height)
+    let revealRadius = (maximumRadius + Self.baseCellSize * 0.12) * waveProgress
+
     context.saveGState()
-    context.setStrokeColor(palette.separator.withAlphaComponent(0.23).cgColor)
-    context.setLineWidth(1.15)
+    let remainingSlab = UIBezierPath(rect: bounds)
+    remainingSlab.append(UIBezierPath(
+      ovalIn: CGRect(
+        x: origin.x - revealRadius,
+        y: origin.y - revealRadius,
+        width: revealRadius * 2,
+        height: revealRadius * 2
+      )
+    ))
+    context.addPath(remainingSlab.cgPath)
+    context.clip(using: .evenOdd)
+    drawReadySlab(in: bounds)
+    context.restoreGState()
+
+    // The ready prompt remains stable during the earliest part of the wave,
+    // then fades as the opening reaches the middle of the board.
+    let promptProgress = Self.smoothStep(min(1, progress / 0.62))
+    drawReadyPrompt(in: bounds, alpha: 1 - promptProgress)
+
+    // A compact filled ripple matches the visible press acknowledgement in
+    // the source frames without obscuring numbers beneath it.
+    let rippleEnd: CGFloat = 0.24
+    if progress < rippleEnd {
+      let rippleProgress = Self.smoothStep(progress / rippleEnd)
+      let rippleRadius = Self.baseCellSize * (0.10 + 0.18 * rippleProgress)
+      context.saveGState()
+      context.setFillColor(
+        palette.foreground.withAlphaComponent(0.72 * (1 - rippleProgress)).cgColor
+      )
+      context.fillEllipse(in: CGRect(
+        x: origin.x - rippleRadius,
+        y: origin.y - rippleRadius,
+        width: rippleRadius * 2,
+        height: rippleRadius * 2
+      ))
+      context.restoreGState()
+    }
+  }
+
+  /// Fades the completed board into the background, introduces the compact
+  /// center pulse visible in the source, then grows the fresh ready slab from
+  /// that point. Keeping all three stages in the canvas avoids a one-frame
+  /// jump through the fully-sized ready board when the session is replaced.
+  @discardableResult
+  private func drawRestartTransition(context: CGContext) -> Bool {
+    guard let startedAt = restartStartedAt,
+      let snapshot = restartSnapshot,
+      restartDuration > 0
+    else { return false }
+
+    let elapsed = (renderTimestamp ?? CACurrentMediaTime()) - startedAt
+    let progress = CGFloat(min(1, max(0, elapsed / restartDuration)))
+    guard progress < 1 else { return false }
+
+    if progress < 0.38 {
+      let fade = Self.smoothStep(progress / 0.38)
+      let scale = 1 - 0.025 * fade
+      context.saveGState()
+      context.translateBy(x: bounds.midX, y: bounds.midY)
+      context.scaleBy(x: scale, y: scale)
+      context.translateBy(x: -bounds.midX, y: -bounds.midY)
+      snapshot.draw(in: bounds, blendMode: .normal, alpha: 1 - fade)
+      context.restoreGState()
+    }
+
+    let center = CGPoint(x: bounds.midX, y: bounds.midY)
+    let pulseProgress = Self.smoothStep(min(1, max(0, (progress - 0.20) / 0.28)))
+    if pulseProgress > 0 {
+      let pulseRadius = min(bounds.width, bounds.height)
+        * (0.012 + 0.105 * pulseProgress)
+      palette.covered.setFill()
+      context.fillEllipse(in: CGRect(
+        x: center.x - pulseRadius,
+        y: center.y - pulseRadius,
+        width: pulseRadius * 2,
+        height: pulseRadius * 2
+      ))
+    }
+
+    let slabProgress = Self.smoothStep(min(1, max(0, (progress - 0.38) / 0.62)))
+    if slabProgress > 0 {
+      let slabScale = 0.055 + 0.945 * slabProgress
+      context.saveGState()
+      context.translateBy(x: center.x, y: center.y)
+      context.scaleBy(x: slabScale, y: slabScale)
+      context.translateBy(x: -center.x, y: -center.y)
+      drawReadySlab(in: bounds)
+      context.restoreGState()
+
+      let promptProgress = Self.smoothStep(
+        min(1, max(0, (slabProgress - 0.72) / 0.28))
+      )
+      drawReadyPrompt(in: bounds, alpha: promptProgress)
+    }
+    return true
+  }
+
+  private func drawGridLine(
+    in rect: CGRect,
+    column: Int,
+    row: Int,
+    context: CGContext
+  ) {
+    context.saveGState()
+    context.setStrokeColor(palette.gridLine.cgColor)
+    context.setLineWidth(1)
+    context.setLineCap(.round)
     let gap = Self.baseCellSize * 0.19
-    context.move(to: CGPoint(x: rect.minX + gap, y: rect.maxY - 0.5))
-    context.addLine(to: CGPoint(x: rect.maxX - gap, y: rect.maxY - 0.5))
-    context.move(to: CGPoint(x: rect.maxX - 0.5, y: rect.minY + gap))
-    context.addLine(to: CGPoint(x: rect.maxX - 0.5, y: rect.maxY - gap))
+    if visuallyRevealed(column: column, row: row + 1) {
+      context.move(to: CGPoint(x: rect.minX + gap, y: rect.maxY - 0.5))
+      context.addLine(to: CGPoint(x: rect.maxX - gap, y: rect.maxY - 0.5))
+    }
+    if visuallyRevealed(column: column + 1, row: row) {
+      context.move(to: CGPoint(x: rect.maxX - 0.5, y: rect.minY + gap))
+      context.addLine(to: CGPoint(x: rect.maxX - 0.5, y: rect.maxY - gap))
+    }
     context.strokePath()
     context.restoreGState()
   }
@@ -832,9 +1199,13 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     switch board[column, row] {
     case .covered:
       return true
-    case .revealed, .mine:
+    case .revealed:
       return revealProgress(for: index) <= 0
-    case .flagged, .wrongFlag:
+    case .mine(let triggered):
+      return triggered ? revealProgress(for: index) <= 0 : true
+    case .flagged:
+      return revealProgress(for: index) <= 0
+    case .flaggedMine, .wrongFlag:
       return false
     }
   }
@@ -846,15 +1217,16 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     switch board[column, row] {
     case .revealed, .wrongFlag:
       return true
-    case .covered, .flagged, .mine:
+    case .covered, .flagged, .flaggedMine, .mine:
       return false
     }
   }
 
   /// At a grid vertex occupied by three covered cells and one revealed cell,
   /// the full-width adjacency bridges form a sharp inward corner. Extend the
-  /// covered region into the revealed quadrant with a quadratic quarter-round;
-  /// its arc joins the two boundary rays without a pointed cutout.
+  /// covered region into the revealed quadrant with a true circular quarter;
+  /// its tangent-continuous arc avoids the pinched corners produced by the old
+  /// quadratic approximation, especially around one isolated revealed cell.
   private func drawConcaveCoverCutouts(
     firstColumn: Int,
     lastColumn: Int,
@@ -891,64 +1263,79 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
           x: vertex.x + CGFloat(quadrant.sx) * radius,
           y: vertex.y
         )
+        let kappa: CGFloat = 0.552_284_75
+        let firstControl = CGPoint(
+          x: vertex.x,
+          y: vertex.y + CGFloat(quadrant.sy) * radius * (1 - kappa)
+        )
+        let secondControl = CGPoint(
+          x: vertex.x + CGFloat(quadrant.sx) * radius * (1 - kappa),
+          y: vertex.y
+        )
         let cutout = UIBezierPath()
         cutout.move(to: vertex)
         cutout.addLine(to: verticalTangent)
-        cutout.addQuadCurve(to: horizontalTangent, controlPoint: vertex)
+        cutout.addCurve(
+          to: horizontalTangent,
+          controlPoint1: firstControl,
+          controlPoint2: secondControl
+        )
         cutout.close()
         cutout.fill()
       }
     }
   }
 
-  /// Clean One keeps diagonally touching covered cells in the same visual
-  /// mass. Join the two rounded corners with a compact circular neck, while
-  /// leaving genuinely isolated cells rounded on all four sides.
-  private func drawDiagonalCoverConnectors(
-    firstColumn: Int,
-    lastColumn: Int,
-    firstRow: Int,
-    lastRow: Int
-  ) {
-    let radius = Self.baseCellSize * 0.09
-    palette.covered.setFill()
-
-    for vertexRow in max(1, firstRow)...min(board.rows - 1, lastRow + 1) {
-      for vertexColumn in max(1, firstColumn)...min(board.columns - 1, lastColumn + 1) {
-        let northwest = visuallyCovered(column: vertexColumn - 1, row: vertexRow - 1)
-        let northeast = visuallyCovered(column: vertexColumn, row: vertexRow - 1)
-        let southwest = visuallyCovered(column: vertexColumn - 1, row: vertexRow)
-        let southeast = visuallyCovered(column: vertexColumn, row: vertexRow)
-        let diagonalPair = (northwest && southeast && !northeast && !southwest)
-          || (northeast && southwest && !northwest && !southeast)
-        guard diagonalPair else { continue }
-
-        let vertex = CGPoint(
-          x: CGFloat(vertexColumn) * Self.baseCellSize,
-          y: CGFloat(vertexRow) * Self.baseCellSize
-        )
-        UIBezierPath(
-          ovalIn: CGRect(
-            x: vertex.x - radius,
-            y: vertex.y - radius,
-            width: radius * 2,
-            height: radius * 2
-          )
-        ).fill()
-      }
-    }
+  private func cellRect(column: Int, row: Int) -> CGRect {
+    CGRect(
+      x: CGFloat(column) * Self.baseCellSize,
+      y: CGFloat(row) * Self.baseCellSize,
+      width: Self.baseCellSize,
+      height: Self.baseCellSize
+    )
   }
 
-  private func isFlagged(column: Int, row: Int) -> Bool {
-    guard column >= 0, column < board.columns, row >= 0, row < board.rows else { return false }
-    if case .flagged = board[column, row] { return true }
-    return false
+  private func drawFlagCoveredBackdrop(column: Int, row: Int, radius: CGFloat) {
+    let rect = cellRect(column: column, row: row)
+    for rowDirection in [-1, 1] {
+      for columnDirection in [-1, 1] {
+        // The rounded flag moat exposes its backing only at the corner. That
+        // corner belongs to the covered field when covered cells wrap around
+        // it on both incident sides. Treating either side (or only a diagonal)
+        // as sufficient leaked tiny covered-color wedges onto revealed edges,
+        // most visibly beneath a flag that protrudes from the covered slab.
+        let horizontalCovered = visuallyCovered(
+          column: column + columnDirection,
+          row: row
+        )
+        let verticalCovered = visuallyCovered(
+          column: column,
+          row: row + rowDirection
+        )
+        // When another flag occupies the opposite diagonal, the two incident
+        // covered cells are themselves diagonal-only neighbors. The source
+        // keeps all four rounded corners independent at that vertex; painting
+        // this backing square would manufacture the tiny covered-color spark
+        // between the flags.
+        let diagonalIsFlag = isFlagLike(
+          column: column + columnDirection,
+          row: row + rowDirection
+        )
+        guard horizontalCovered && verticalCovered && !diagonalIsFlag else { continue }
+        UIRectFill(CGRect(
+          x: columnDirection < 0 ? rect.minX : rect.maxX - radius,
+          y: rowDirection < 0 ? rect.minY : rect.maxY - radius,
+          width: radius,
+          height: radius
+        ))
+      }
+    }
   }
 
   private func isFlagLike(column: Int, row: Int) -> Bool {
     guard column >= 0, column < board.columns, row >= 0, row < board.rows else { return false }
     switch board[column, row] {
-    case .flagged, .wrongFlag: return true
+    case .flagged, .flaggedMine, .wrongFlag: return true
     default: return false
     }
   }
@@ -978,7 +1365,14 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     context.saveGState()
     context.setAlpha(alpha)
     palette.covered.setFill()
-    let radius = Self.baseCellSize * 0.09 * seamProgress * scale
+    let roundedSquareRadius = Self.baseCellSize * 0.09 * seamProgress * scale
+    // Once a clearing tile is small, continue its contraction as a dot. A
+    // proportionally shrinking rounded rectangle leaves a conspicuous tiny
+    // square on final moves; the source resolves these late frames into the
+    // same circular visual language as its touch ripple.
+    let dotProgress = Self.smoothStep(min(1, max(0, (progress - 0.38) / 0.42)))
+    let dotRadius = min(overlay.width, overlay.height) / 2
+    let radius = roundedSquareRadius + (dotRadius - roundedSquareRadius) * dotProgress
     if progress <= 0 {
       drawConnectedCover(
         in: rect,
@@ -1016,7 +1410,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     guard let start = revealStartedAt[index] else { return 1 }
     let elapsed = (renderTimestamp ?? CACurrentMediaTime()) - start
     if elapsed < 0 { return 0 }
-    let duration = 0.24 * Self.durationScale(for: animationSpeed)
+    let duration = revealDurations[index] ?? 0.24 * Self.durationScale(for: animationSpeed)
     return CGFloat(min(1, elapsed / duration))
   }
 
@@ -1025,17 +1419,32 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     return 0.72 + Self.smoothStep(progress) * 0.28
   }
 
-  private func flagScale(for progress: CGFloat) -> CGFloat {
-    guard progress < 1 else { return 1 }
-    return 0.78 + Self.smoothStep(progress) * 0.22
-  }
-
   private func maintainDisplayLink() {
     let now = CACurrentMediaTime()
     updatePaletteAnimation(at: now)
+    if let startedAt = initialRevealStartedAt,
+      now - startedAt >= initialRevealDuration
+    {
+      initialRevealStartedAt = nil
+      initialRevealOrigin = nil
+      initialRevealDuration = 0
+    }
+    if let startedAt = restartStartedAt,
+      now - startedAt >= restartDuration
+    {
+      restartSnapshot = nil
+      restartStartedAt = nil
+      restartDuration = 0
+    }
     let retention = 0.72 * Self.durationScale(for: animationSpeed)
     revealStartedAt = revealStartedAt.filter { now - $0.value < retention }
-    if revealStartedAt.isEmpty, paletteTransitionStartedAt == nil {
+    let activeIndices = Set(revealStartedAt.keys)
+    revealDurations = revealDurations.filter { activeIndices.contains($0.key) }
+    if revealStartedAt.isEmpty,
+      paletteTransitionStartedAt == nil,
+      initialRevealStartedAt == nil,
+      restartStartedAt == nil
+    {
       displayLink?.invalidate()
       displayLink = nil
     } else if displayLink == nil {
@@ -1174,13 +1583,17 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   }
 
   @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
-    guard recognizer.state == .ended, let coordinate = coordinate(at: recognizer.location(in: self))
+    guard restartStartedAt == nil,
+      recognizer.state == .ended,
+      let coordinate = coordinate(at: recognizer.location(in: self))
     else { return }
     onTap?(coordinate.column, coordinate.row)
   }
 
   @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-    guard recognizer.state == .began, let coordinate = coordinate(at: recognizer.location(in: self))
+    guard restartStartedAt == nil,
+      recognizer.state == .began,
+      let coordinate = coordinate(at: recognizer.location(in: self))
     else { return }
     onLongPress?(coordinate.column, coordinate.row)
   }
