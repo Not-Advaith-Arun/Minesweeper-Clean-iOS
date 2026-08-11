@@ -92,11 +92,18 @@ final class GameSessionController {
   private(set) var feedbackAction: PrimaryAction = .dig
   private(set) var lastChangedCoordinates: Set<CellCoordinate> = []
   private(set) var lastActionCoordinate: CellCoordinate?
+  private(set) var isReplaying = false
+  private(set) var isReplayCovering = false
+  private(set) var replayCoverSequence = 0
 
   let difficulty: ReplicaDifficulty
   private var engine: GameEngine
   private var explodedMine: CellCoordinate?
   private var settings: UserSettings
+  private var replayFrames: [GameReplayFrame] = []
+  private var completedReplayBoard: BoardPresentation?
+  private var replayTask: Task<Void, Never>?
+  private var replayGeneration = 0
 
   init(difficulty: ReplicaDifficulty, resume: Bool, settings: UserSettings) {
     self.difficulty = difficulty
@@ -125,6 +132,7 @@ final class GameSessionController {
     }
 #endif
     refreshPresentation()
+    resetReplayHistory(includeCurrentBoard: phase != .ready)
 
     if resume {
       isLoading = true
@@ -170,6 +178,7 @@ final class GameSessionController {
   }
 
   func restart() {
+    stopWinReplay(restoreCompletedBoard: false)
     engine = GameEngine(
       difficulty: difficulty.coreValue,
       actionMode: settings.primaryAction == .dig ? .dig : .flag,
@@ -182,6 +191,110 @@ final class GameSessionController {
     lastActionCoordinate = nil
     isLoading = false
     refreshPresentation()
+    completedReplayBoard = nil
+    resetReplayHistory(includeCurrentBoard: false)
+  }
+
+  /// Replays the exact board states produced by the player's successful game.
+  /// Clean One starts from its covered slab, compresses the recorded actions
+  /// into a short timelapse, then closes the board with a centered circular
+  /// wipe before looping. Keeping the timeline in the session means flags,
+  /// chords, and large clearing cascades retain their real chronological order.
+  func beginWinReplay(animationSpeed: Double) {
+    guard phase == .won, animationSpeed > 0 else { return }
+
+    stopWinReplay()
+    let generation = replayGeneration
+    let finalBoard = board
+    completedReplayBoard = finalBoard
+
+    var timeline = replayFrames
+    let coveredBoard = BoardPresentation(columns: board.columns, rows: board.rows)
+    if timeline.first?.board != coveredBoard {
+      timeline.insert(
+        GameReplayFrame(board: coveredBoard, changedCoordinates: [], actionCoordinate: nil),
+        at: 0
+      )
+    }
+    if timeline.last?.board != finalBoard {
+      timeline.append(
+        GameReplayFrame(
+          board: finalBoard,
+          changedCoordinates: Self.differences(from: timeline.last?.board, to: finalBoard),
+          actionCoordinate: lastActionCoordinate
+        )
+      )
+    }
+
+    let actionCount = max(1, timeline.count - 1)
+    // The native 220-mine reference spends about eleven seconds on the
+    // action history. Short boards are deliberately kept around two seconds
+    // so their replay still reads as a miniature game rather than a flash.
+    let historyDuration = min(10.4, max(2.2, Double(actionCount) * 0.034))
+    let stepDuration = historyDuration / Double(actionCount)
+    let speedScale = 100 / min(150, max(5, animationSpeed))
+    let openingHold = 0.42 * speedScale
+    let finalHold = 0.42 * speedScale
+    let wipeDuration = 0.92 * speedScale
+    let loopHold = 0.48 * speedScale
+
+    isReplaying = true
+    isReplayCovering = false
+    board = coveredBoard
+    lastChangedCoordinates = []
+    lastActionCoordinate = nil
+
+    replayTask = Task { [weak self] in
+      guard let self else { return }
+      while self.replayGeneration == generation,
+        self.phase == .won,
+        !Task.isCancelled
+      {
+        self.isReplayCovering = false
+        self.board = coveredBoard
+        self.lastChangedCoordinates = []
+        self.lastActionCoordinate = nil
+        guard await self.holdReplay(
+          for: openingHold, generation: generation)
+        else { return }
+
+        for frame in timeline.dropFirst() {
+          guard self.replayGeneration == generation, !Task.isCancelled else { return }
+          self.board = frame.board
+          self.lastChangedCoordinates = frame.changedCoordinates
+          self.lastActionCoordinate = frame.actionCoordinate
+          guard await self.holdReplay(
+            for: stepDuration * speedScale, generation: generation)
+          else { return }
+        }
+
+        guard await self.holdReplay(for: finalHold, generation: generation) else { return }
+        self.replayCoverSequence += 1
+        self.isReplayCovering = true
+        guard await self.holdReplay(for: wipeDuration, generation: generation) else { return }
+
+        // Replace the now-fully-covered visual with the real covered board
+        // before removing the overlay, so no completed-board frame can flash.
+        self.board = coveredBoard
+        self.lastChangedCoordinates = []
+        self.lastActionCoordinate = nil
+        self.isReplayCovering = false
+        guard await self.holdReplay(for: loopHold, generation: generation) else { return }
+      }
+    }
+  }
+
+  func stopWinReplay(restoreCompletedBoard: Bool = true) {
+    replayGeneration += 1
+    replayTask?.cancel()
+    replayTask = nil
+    isReplayCovering = false
+    isReplaying = false
+    if restoreCompletedBoard, phase == .won, let completedReplayBoard {
+      board = completedReplayBoard
+      lastChangedCoordinates = []
+      lastActionCoordinate = nil
+    }
   }
 
   func saveIfNeeded() {
@@ -219,6 +332,7 @@ final class GameSessionController {
       engine = try GameEngine(snapshot: snapshot)
       actionMode = engine.actionMode == .dig ? .dig : .flag
       refreshPresentation()
+      resetReplayHistory(includeCurrentBoard: phase != .ready)
       resumeTimerIfNeeded()
     } catch {
       errorMessage = "The saved game could not be restored. A fresh board was created."
@@ -268,19 +382,10 @@ final class GameSessionController {
           }
         }
       }
-      if outcome.engine.phase == .lost {
-        // Wrong flags also change visual state at the terminal transition and
-        // must participate in the same loss animation schedule.
-        for (index, cell) in outcome.engine.cells.enumerated()
-        where cell.isFlagged && !cell.isMine {
-          if let flagged = outcome.engine.configuration.coordinate(for: index) {
-            visuallyChanged.insert(flagged)
-          }
-        }
-      }
       self.lastChangedCoordinates = visuallyChanged
       self.isLoading = false
-      if outcome.result?.didChange == true {
+      let didChange = outcome.result?.didChange == true
+      if didChange {
         if !outcome.engine.phase.isFinished {
           self.feedbackAction = requestedAction
           self.feedbackSequence += 1
@@ -288,7 +393,74 @@ final class GameSessionController {
         self.persistAfterAction()
       }
       self.refreshPresentation()
+      if didChange, self.phase != .lost {
+        self.appendReplayFrame(
+          changedCoordinates: visuallyChanged,
+          actionCoordinate: coordinate
+        )
+      }
     }
+  }
+
+  private func resetReplayHistory(includeCurrentBoard: Bool) {
+    let coveredBoard = BoardPresentation(columns: board.columns, rows: board.rows)
+    replayFrames = [
+      GameReplayFrame(board: coveredBoard, changedCoordinates: [], actionCoordinate: nil)
+    ]
+    guard includeCurrentBoard, board != coveredBoard else { return }
+    replayFrames.append(
+      GameReplayFrame(
+        board: board,
+        changedCoordinates: Self.differences(from: coveredBoard, to: board),
+        actionCoordinate: nil
+      )
+    )
+  }
+
+  private func appendReplayFrame(
+    changedCoordinates: Set<CellCoordinate>,
+    actionCoordinate: CellCoordinate?
+  ) {
+    guard replayFrames.last?.board != board else { return }
+    replayFrames.append(
+      GameReplayFrame(
+        board: board,
+        changedCoordinates: changedCoordinates,
+        actionCoordinate: actionCoordinate
+      )
+    )
+  }
+
+  private func holdReplay(for duration: Double, generation: Int) async -> Bool {
+    do {
+      try await Task.sleep(for: .seconds(max(0, duration)))
+    } catch {
+      return false
+    }
+    return !Task.isCancelled && replayGeneration == generation && phase == .won
+  }
+
+  private static func differences(
+    from oldBoard: BoardPresentation?,
+    to newBoard: BoardPresentation
+  ) -> Set<CellCoordinate> {
+    guard let oldBoard,
+      oldBoard.columns == newBoard.columns,
+      oldBoard.rows == newBoard.rows
+    else {
+      return Set(
+        (0..<newBoard.rows).flatMap { row in
+          (0..<newBoard.columns).map { column in CellCoordinate(row: row, column: column) }
+        }
+      )
+    }
+    var changed: Set<CellCoordinate> = []
+    for index in newBoard.cells.indices where oldBoard.cells[index] != newBoard.cells[index] {
+      changed.insert(
+        CellCoordinate(row: index / newBoard.columns, column: index % newBoard.columns)
+      )
+    }
+    return changed
   }
 
   private func persistAfterAction() {
@@ -453,6 +625,12 @@ final class GameSessionController {
     )
   }
 #endif
+}
+
+private struct GameReplayFrame {
+  let board: BoardPresentation
+  let changedCoordinates: Set<CellCoordinate>
+  let actionCoordinate: CellCoordinate?
 }
 
 private struct CoreActionOutcome: Sendable {

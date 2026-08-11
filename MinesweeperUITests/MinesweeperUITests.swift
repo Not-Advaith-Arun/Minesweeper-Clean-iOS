@@ -96,6 +96,34 @@ final class MinesweeperUITests: XCTestCase {
     try capture("restart-06-ready")
   }
 
+  func testCapturePostWinReplayTimeline() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "kawa"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "near_win"
+    app.launch()
+
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 4))
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.45)).tap()
+    XCTAssertTrue(app.buttons["game.dismissResult"].waitForExistence(timeout: 3))
+    app.buttons["game.dismissResult"].tap()
+    XCTAssertTrue(app.buttons["game.startNew"].waitForExistence(timeout: 2))
+
+    wait(0.15)
+    try capture("replay-01-covered")
+    wait(0.50)
+    try capture("replay-02-history")
+    wait(1.25)
+    try capture("replay-03-completed")
+    wait(1.35)
+    try capture("replay-04-wipe-start")
+    wait(0.42)
+    try capture("replay-05-wipe-expand")
+    wait(0.50)
+    try capture("replay-06-loop-reset")
+  }
+
   func testCaptureBoardCornerRegression() throws {
     app.terminate()
     app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "pink_amoled"
@@ -162,6 +190,36 @@ final class MinesweeperUITests: XCTestCase {
     try capture("easy-loss-03-mine-cascade")
     XCTAssertTrue(app.buttons["game.startNew"].waitForExistence(timeout: 3))
     try capture("easy-loss-04-settled")
+  }
+
+  func testCaptureExtremeLossCinematic() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "kawa"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "extreme"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "near_loss"
+    app.launch()
+
+    let board = app.otherElements["game.board"]
+    let actionToggle = app.descendants(matching: .any)["game.actionToggle"]
+    XCTAssertTrue(board.waitForExistence(timeout: 4))
+    XCTAssertTrue(actionToggle.waitForExistence(timeout: 2))
+    try capture("extreme-loss-01-before-mine")
+
+    board.coordinate(withNormalizedOffset: CGVector(dx: 9.5 / 18, dy: 15.5 / 32)).tap()
+    XCTAssertTrue(actionToggle.exists, "The action capsule must remain during the mine wave")
+    try capture("extreme-loss-02-detonation")
+    wait(0.12)
+    try capture("extreme-loss-03-first-neighbor")
+    wait(0.22)
+    try capture("extreme-loss-04-zoom-begins")
+    wait(0.32)
+    try capture("extreme-loss-05-zoom-settles")
+    wait(0.34)
+    try capture("extreme-loss-06-wave-settles")
+
+    XCTAssertTrue(app.buttons["game.startNew"].waitForExistence(timeout: 2))
+    XCTAssertFalse(actionToggle.exists)
+    try capture("extreme-loss-07-controls")
   }
 
   func testCaptureEveryDifficultyFirstReveal() throws {

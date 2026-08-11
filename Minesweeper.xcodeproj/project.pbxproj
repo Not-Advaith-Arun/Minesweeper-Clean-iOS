@@ -585,7 +585,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.21.3;
+				MARKETING_VERSION = 1.22.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica;
 				PRODUCT_NAME = Minesweeper;
 				SDKROOT = iphoneos;
@@ -698,7 +698,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.21.3;
+				MARKETING_VERSION = 1.22.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica;
 				PRODUCT_NAME = Minesweeper;
 				SDKROOT = iphoneos;

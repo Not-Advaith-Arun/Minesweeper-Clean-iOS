@@ -11,6 +11,8 @@ struct BoardRenderer: UIViewRepresentable {
   let theme: AppTheme
   let showsBorders: Bool
   let animationSpeed: Double
+  let isReplayCovering: Bool
+  let replayCoverSequence: Int
   let longPressEnabled: Bool
   let longPressDuration: TimeInterval
   let onTap: (Int, Int) -> Void
@@ -36,7 +38,9 @@ struct BoardRenderer: UIViewRepresentable {
       actionCoordinate: actionCoordinate,
       palette: BoardPalette(theme: theme),
       showsBorders: showsBorders,
-      animationSpeed: animationSpeed
+      animationSpeed: animationSpeed,
+      isReplayCovering: isReplayCovering,
+      replayCoverSequence: replayCoverSequence
     )
   }
 }
@@ -220,7 +224,9 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     actionCoordinate: CellCoordinate?,
     palette: BoardPalette,
     showsBorders: Bool,
-    animationSpeed: Double
+    animationSpeed: Double,
+    isReplayCovering: Bool,
+    replayCoverSequence: Int
   ) {
     let gridSize = CGSize(
       width: CGFloat(board.columns) * BoardCanvasView.baseCellSize,
@@ -259,7 +265,10 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       focusWorkItem?.cancel()
       isHoldingRevealTransform = false
       terminalWorkItem?.cancel()
-      let baseDelay = phase == .won ? 0.68 : 0.70
+      // Loss keeps the action capsule on-screen while mines radiate outward,
+      // then begins fitting the whole board roughly ten 30-fps frames after
+      // detonation. Win holds its close framing longer for the score reveal.
+      let baseDelay = phase == .won ? 0.68 : 0.34
       let delay = animationSpeed > 0 && !UIAccessibility.isReduceMotionEnabled
         ? baseDelay * 100 / min(150, max(5, animationSpeed)) : 0
       let work = DispatchWorkItem { [weak self] in self?.applyTerminalFrame(animated: delay > 0) }
@@ -279,7 +288,9 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       actionCoordinate: actionCoordinate,
       palette: palette,
       showsBorders: showsBorders,
-      animationSpeed: animationSpeed
+      animationSpeed: animationSpeed,
+      isReplayCovering: isReplayCovering,
+      replayCoverSequence: replayCoverSequence
     )
     setNeedsLayout()
   }
@@ -412,8 +423,9 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       self.layoutIfNeeded()
     }
     if animated {
+      let duration = lastPhase == .lost ? 0.32 : 0.30
       UIView.animate(
-        withDuration: 0.30 * 100 / min(150, max(5, canvas.animationSpeedPercent)),
+        withDuration: duration * 100 / min(150, max(5, canvas.animationSpeedPercent)),
         delay: 0,
         options: [.curveEaseInOut, .beginFromCurrentState],
         animations: changes
@@ -459,6 +471,10 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   private var restartSnapshot: UIImage?
   private var restartStartedAt: CFTimeInterval?
   private var restartDuration: CFTimeInterval = 0
+  private var isReplayCovering = false
+  private var replayCoverSequence = 0
+  private var replayCoverStartedAt: CFTimeInterval?
+  private var replayCoverDuration: CFTimeInterval = 0
   private var displayLink: CADisplayLink?
   // Every cell in a rendered frame must observe exactly the same animation
   // time. Sampling CACurrentMediaTime() independently for connected neighbors
@@ -503,7 +519,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     actionCoordinate: CellCoordinate?,
     palette: BoardPalette,
     showsBorders: Bool,
-    animationSpeed: Double
+    animationSpeed: Double,
+    isReplayCovering: Bool,
+    replayCoverSequence: Int
   ) {
     let oldBoard = self.board
     let oldPhase = self.phase
@@ -529,6 +547,17 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     self.showsBorders = showsBorders
     self.animationSpeed = animationSpeed
     let now = CACurrentMediaTime()
+    if isReplayCovering,
+      (!self.isReplayCovering || self.replayCoverSequence != replayCoverSequence)
+    {
+      replayCoverStartedAt = now
+      replayCoverDuration = 0.92 * Self.durationScale(for: animationSpeed)
+    } else if !isReplayCovering {
+      replayCoverStartedAt = nil
+      replayCoverDuration = 0
+    }
+    self.isReplayCovering = isReplayCovering
+    self.replayCoverSequence = replayCoverSequence
     updatePalette(to: palette, at: now)
     let distanceScale = Self.durationScale(for: animationSpeed)
     if let pendingRestartSnapshot {
@@ -574,15 +603,22 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         // intermediate that the global mask is specifically replacing.
         if startsInitialReveal { continue }
         let delay: Double
-        if phase == .lost, case .mine = board.cells[index], let actionCoordinate {
+        let participatesInLossWave: Bool = switch board.cells[index] {
+        case .mine, .flaggedMine: true
+        case .covered, .revealed, .flagged, .wrongFlag: false
+        }
+        if phase == .lost, participatesInLossWave, let actionCoordinate {
           let dx = Double(coordinate.column - actionCoordinate.column)
           let dy = Double(coordinate.row - actionCoordinate.row)
-          let radial = hypot(dx, dy) * 0.018
+          let radial = hypot(dx, dy) * 0.023
           let jitter = Double((coordinate.row * 17 + coordinate.column * 29) % 23) / 1_000
           // A radial wave avoids the mechanical diagonal bands produced by a
           // Chebyshev schedule. The deterministic micro-jitter keeps nearby
           // mines from appearing on exactly the same display frame.
-          delay = min(0.38, radial) + (dx == 0 && dy == 0 ? 0 : 0.07 + jitter)
+          // Do not cap the far half of a tall board too early. Nearby mines
+          // begin at about 100 ms; distant mines continue arriving through
+          // the terminal zoom and settle close to the one-second mark.
+          delay = min(0.78, radial) + (dx == 0 && dy == 0 ? 0 : 0.07 + jitter)
         } else {
           let distance = actionCoordinate.map {
             max(abs(coordinate.row - $0.row), abs(coordinate.column - $0.column))
@@ -590,12 +626,15 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
           delay = min(0.30, Double(distance) * 0.012)
         }
         revealStartedAt[index] = now + delay * distanceScale
-        // Flags in the reference settle within roughly two 30-fps frames.
-        // Reveals and mine cascades retain their longer surface morph.
+        // Flags and mine glyphs swap in within roughly one or two 30-fps
+        // frames. The loss cascade's motion comes from its radial schedule,
+        // not from slowly growing each individual gear.
         switch board.cells[index] {
-        case .flagged, .wrongFlag:
+        case .flagged, .flaggedMine, .wrongFlag:
           revealDurations[index] = 0.07 * distanceScale
-        case .covered, .revealed, .flaggedMine, .mine:
+        case .mine:
+          revealDurations[index] = 0.08 * distanceScale
+        case .covered, .revealed:
           revealDurations[index] = 0.24 * distanceScale
         }
       }
@@ -690,6 +729,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       lastRow: lastRow
     )
     drawInitialRevealOverlay(context: context)
+    drawReplayCoverOverlay(context: context)
   }
 
   private func drawCell(_ cell: BoardCellVisual, column: Int, row: Int, context: CGContext) {
@@ -787,7 +827,14 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     lastRow: Int
   ) {
     let radius = Self.baseCellSize * 0.09
-    let tileInset = Self.baseCellSize * 0.08
+    // Native reference frames use a 71 px cell pitch and a 59 px flag surface.
+    // Preserve that 83% ratio here. The source's rasterized flag measures
+    // about 30% x 32% of the cell, so its 24-unit Material path needs a
+    // slightly wider-than-tall viewport. The previous uniform 55% viewport
+    // made the silhouette especially tall and weakened the surrounding moat.
+    let tileInset = Self.baseCellSize * 0.085
+    let flagGlyphScaleX: CGFloat = 0.50
+    let flagGlyphScaleY: CGFloat = 0.455
 
     // A flag placed in the unrevealed slab needs the covered color beneath the
     // rounded moat corners. A flag already surrounded by revealed cells keeps
@@ -840,11 +887,21 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         let progress = revealProgress(for: index)
         guard progress > 0 else {
           if case .flaggedMine = board[column, row] {
-            drawFlag(in: rect, color: palette.flagGlyph, scale: 0.55)
+            drawFlag(
+              in: rect,
+              color: palette.flagGlyph,
+              scaleX: flagGlyphScaleX,
+              scaleY: flagGlyphScaleY
+            )
             continue
           }
           if case .wrongFlag = board[column, row] {
-            drawFlag(in: rect, color: palette.flagGlyph, scale: 0.55)
+            drawFlag(
+              in: rect,
+              color: palette.flagGlyph,
+              scaleX: flagGlyphScaleX,
+              scaleY: flagGlyphScaleY
+            )
             continue
           }
           // Keep a scheduled flag completely covered until its turn. The
@@ -858,16 +915,16 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
             in: rect,
             color: palette.flagGlyph,
             holeColor: palette.flagged,
-            scale: 0.62
+            scale: 1
           )
         } else {
           drawFlag(
             in: rect,
             color: palette.flagGlyph,
-            scale: 0.55
+            scaleX: flagGlyphScaleX,
+            scaleY: flagGlyphScaleY
           )
         }
-        if case .wrongFlag = board[column, row] { drawCross(in: rect) }
         if showsBorders {
           guard let context = UIGraphicsGetCurrentContext() else { continue }
           context.setStrokeColor(palette.separator.cgColor)
@@ -1002,6 +1059,39 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       ))
       context.restoreGState()
     }
+  }
+
+  /// Closes a completed replay with the centered covered-color circle visible
+  /// in Clean One's native timelapse. The controller swaps in the true covered
+  /// board while this circle fills the clipped canvas, allowing the overlay to
+  /// disappear without exposing a single stale completed-board frame.
+  private func drawReplayCoverOverlay(context: CGContext) {
+    guard isReplayCovering,
+      let startedAt = replayCoverStartedAt,
+      replayCoverDuration > 0
+    else { return }
+
+    let elapsed = (renderTimestamp ?? CACurrentMediaTime()) - startedAt
+    let progress = CGFloat(min(1, max(0, elapsed / replayCoverDuration)))
+    // The native wipe hesitates for approximately one 30-fps frame, then its
+    // leading edge accelerates before settling against the board corners.
+    let delayedProgress = min(1, max(0, (progress - 0.035) / 0.965))
+    let radiusProgress = Self.smoothStep(delayedProgress)
+    let center = CGPoint(x: bounds.midX, y: bounds.midY)
+    let maximumRadius = hypot(bounds.width / 2, bounds.height / 2)
+      + Self.baseCellSize * 0.08
+    let radius = maximumRadius * radiusProgress
+    guard radius > 0 else { return }
+
+    context.saveGState()
+    context.setFillColor(palette.covered.cgColor)
+    context.fillEllipse(in: CGRect(
+      x: center.x - radius,
+      y: center.y - radius,
+      width: radius * 2,
+      height: radius * 2
+    ))
+    context.restoreGState()
   }
 
   /// Fades the completed board into the background, introduces the compact
@@ -1440,10 +1530,18 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     revealStartedAt = revealStartedAt.filter { now - $0.value < retention }
     let activeIndices = Set(revealStartedAt.keys)
     revealDurations = revealDurations.filter { activeIndices.contains($0.key) }
+    let replayCoverIsAnimating = if isReplayCovering,
+      let startedAt = replayCoverStartedAt
+    {
+      now - startedAt < replayCoverDuration
+    } else {
+      false
+    }
     if revealStartedAt.isEmpty,
       paletteTransitionStartedAt == nil,
       initialRevealStartedAt == nil,
-      restartStartedAt == nil
+      restartStartedAt == nil,
+      !replayCoverIsAnimating
     {
       displayLink?.invalidate()
       displayLink = nil
@@ -1505,11 +1603,16 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     }
   }
 
-  private func drawFlag(in rect: CGRect, color: UIColor, scale: CGFloat = 1) {
+  private func drawFlag(
+    in rect: CGRect,
+    color: UIColor,
+    scaleX: CGFloat = 1,
+    scaleY: CGFloat = 1
+  ) {
     guard let context = UIGraphicsGetCurrentContext() else { return }
     context.saveGState()
     context.translateBy(x: rect.midX, y: rect.midY)
-    context.scaleBy(x: scale, y: scale)
+    context.scaleBy(x: scaleX, y: scaleY)
     context.translateBy(x: -rect.midX, y: -rect.midY)
     func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
       CGPoint(x: rect.minX + rect.width * x / 24, y: rect.minY + rect.height * y / 24)
@@ -1539,7 +1642,10 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     context.scaleBy(x: scale, y: scale)
     context.translateBy(x: -rect.midX, y: -rect.midY)
     context.setFillColor(color.cgColor)
-    let radius = rect.width * 0.18
+    // Native loss frames measure the gear silhouette at 48–49% of one cell
+    // pitch. A 0.156 core radius plus the eight radial teeth yields 48.7%; the
+    // older 0.18 core rendered mines about 15% too large.
+    let radius = rect.width * 0.156
     context.fillEllipse(
       in: CGRect(
         x: rect.midX - radius, y: rect.midY - radius, width: radius * 2, height: radius * 2))
@@ -1561,25 +1667,12 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       context.restoreGState()
     }
     context.setFillColor(holeColor.cgColor)
-    let holeSize = rect.width * 0.115
+    let holeSize = rect.width * 0.105
     context.fill(
       CGRect(
         x: rect.midX - holeSize / 2, y: rect.midY - holeSize / 2, width: holeSize, height: holeSize)
     )
     context.restoreGState()
-  }
-
-  private func drawCross(in rect: CGRect) {
-    guard let context = UIGraphicsGetCurrentContext() else { return }
-    context.setStrokeColor(palette.mine.cgColor)
-    context.setLineWidth(rect.width * 0.055)
-    context.setLineCap(.round)
-    let inset = rect.width * 0.30
-    context.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + inset))
-    context.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
-    context.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY + inset))
-    context.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY - inset))
-    context.strokePath()
   }
 
   @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {

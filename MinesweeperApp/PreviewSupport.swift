@@ -31,6 +31,8 @@
       theme: ThemeCatalog.fallback,
       showsBorders: true,
       animationSpeed: 100,
+      isReplayCovering: false,
+      replayCoverSequence: 0,
       longPressEnabled: true,
       longPressDuration: 0.3,
       onTap: { _, _ in },

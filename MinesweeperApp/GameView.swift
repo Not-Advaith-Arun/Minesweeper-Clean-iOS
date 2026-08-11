@@ -35,6 +35,8 @@ struct GameView: View {
         theme: theme,
         showsBorders: store.settings.cellBorders,
         animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed,
+        isReplayCovering: session.isReplayCovering,
+        replayCoverSequence: session.replayCoverSequence,
         longPressEnabled: store.settings.longPressEnabled,
         longPressDuration: store.settings.longPressDelayMilliseconds / 1_000,
         onTap: { column, row in
@@ -66,7 +68,8 @@ struct GameView: View {
           }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
-      } else if session.phase == .playing && showActionToggle
+      } else if (session.phase == .playing || (session.phase.isFinished && !showEndControls))
+        && showActionToggle
         && (store.settings.showActionToggle || !store.settings.longPressEnabled)
       {
         VStack {
@@ -78,6 +81,7 @@ struct GameView: View {
         // offset clips the capsule on compact 667-point iPhones.
         .offset(y: UIScreen.main.bounds.height < 750 ? 0 : 34)
         .transition(.scale(scale: 0.96).combined(with: .opacity))
+        .allowsHitTesting(session.phase == .playing)
       }
 
       if showResult, session.phase == .won {
@@ -93,6 +97,8 @@ struct GameView: View {
               withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
                 showResult = false
               }
+              session.beginWinReplay(
+                animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed)
             }
           )
         }
@@ -126,8 +132,12 @@ struct GameView: View {
       store.haptic(session.feedbackAction == .dig ? .reveal : .flag)
     }
     .onChange(of: session.phase) { previous, current in
-      if current == .ready || current.isFinished {
+      if current == .ready {
         showActionToggle = false
+      } else if current.isFinished {
+        // Keep the fixed action capsule present while terminal cell and camera
+        // motion play. The second terminal-state handler exchanges it for the
+        // restart controls only after those animations have settled.
       } else if current == .playing, previous == .ready {
         let delay = !reduceMotion && store.settings.animationSpeed > 0
           ? 0.78 * 100 / store.settings.animationSpeed : 0
@@ -157,13 +167,22 @@ struct GameView: View {
       store.clearSavedGame(difficulty)
       showEndControls = false
       showResult = false
-      let baseDelay = current == .won ? 0.70 : 0.72
+      let baseDelay = current == .won ? 0.70 : 1.05
       let delay = !reduceMotion && store.settings.animationSpeed > 0
         ? baseDelay * 100 / store.settings.animationSpeed : 0
       Task {
         try? await Task.sleep(for: .seconds(delay))
         guard session.phase == current else { return }
-        withAnimation(ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)) {
+        let terminalAnimation: Animation? = if current == .lost,
+          store.settings.animationSpeed > 0,
+          !reduceMotion
+        {
+          .easeOut(duration: 0.12 * 100 / store.settings.animationSpeed)
+        } else {
+          ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)
+        }
+        withAnimation(terminalAnimation) {
+          showActionToggle = false
           showEndControls = true
         }
         if current == .won {
@@ -177,7 +196,12 @@ struct GameView: View {
       switch phase {
       case .active:
         session.resumeTimerIfNeeded()
+        if session.phase == .won, !showResult, !session.isReplaying {
+          session.beginWinReplay(
+            animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed)
+        }
       case .inactive, .background:
+        session.stopWinReplay()
         session.saveIfNeeded()
         store.registerSavedGame(session.savedSummary)
       @unknown default:
@@ -186,6 +210,7 @@ struct GameView: View {
     }
     .onDisappear {
       restartTask?.cancel()
+      session.stopWinReplay()
       session.saveIfNeeded()
       store.registerSavedGame(session.savedSummary)
     }
@@ -204,6 +229,7 @@ struct GameView: View {
   }
 
   private func leaveGame() {
+    session.stopWinReplay()
     session.saveIfNeeded()
     store.registerSavedGame(session.savedSummary)
     dismiss()
@@ -211,6 +237,10 @@ struct GameView: View {
 
   private func startNewGame(_ selected: ReplicaDifficulty) {
     restartTask?.cancel()
+    // Preserve the replay's currently visible frame until the restart canvas
+    // snapshots it. Restoring the solved board here creates a conspicuous
+    // one-frame flash when Start new game is tapped during the covered hold.
+    session.stopWinReplay(restoreCompletedBoard: false)
     showResult = false
     withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
       showEndControls = false
