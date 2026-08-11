@@ -99,9 +99,8 @@ private struct TimesDifficultySelector: View {
     } label: {
       Image(systemName: symbol)
         .font(.system(size: 19, weight: .regular))
-        .frame(width: 44, height: 44)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 44))
   }
 }
 

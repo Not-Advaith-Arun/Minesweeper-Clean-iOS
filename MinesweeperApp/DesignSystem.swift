@@ -70,19 +70,29 @@ struct GlassCapsuleSurface: View {
 
   var body: some View {
     Capsule(style: .continuous)
-      .fill(
-        theme.isAMOLED
-          ? AnyShapeStyle(Color.black.opacity(0.94))
-          : AnyShapeStyle(.ultraThinMaterial)
-      )
+      // Material remains the base in every theme. AMOLED previously replaced
+      // it with an opaque black fill, which made those controls read as ash
+      // gray paint instead of glass.
+      .fill(.ultraThinMaterial)
+      .overlay {
+        Capsule(style: .continuous)
+          .fill(
+            theme.isAMOLED
+              ? Color.black.opacity(0.38)
+              : theme.usesLightBackground
+                ? Color.white.opacity(0.40) : Color.white.opacity(0.035)
+          )
+      }
       .overlay {
         Capsule(style: .continuous)
           .fill(
             LinearGradient(
               colors: [
-                Color.white.opacity(theme.isAMOLED ? 0.025 : 0.28),
-                theme.accent.opacity(theme.isAMOLED ? (emphasized ? 0.07 : 0.025) : (emphasized ? 0.15 : 0.06)),
-                theme.surface.opacity(theme.isAMOLED ? 0.08 : 0.14),
+                Color.white.opacity(
+                  theme.isAMOLED ? 0.10 : theme.usesLightBackground ? 0.40 : 0.28),
+                theme.accent.opacity(theme.isAMOLED ? (emphasized ? 0.13 : 0.07) : (emphasized ? 0.15 : 0.06)),
+                theme.surface.opacity(
+                  theme.isAMOLED ? 0.16 : theme.usesLightBackground ? 0.05 : 0.14),
               ],
               startPoint: .topLeading,
               endPoint: .bottomTrailing
@@ -94,8 +104,8 @@ struct GlassCapsuleSurface: View {
           .stroke(
             LinearGradient(
               colors: [
-                Color.white.opacity(theme.isAMOLED ? 0.11 : 0.72),
-                theme.accent.opacity(theme.isAMOLED ? 0.18 : 0.30),
+                Color.white.opacity(theme.isAMOLED ? 0.28 : 0.72),
+                theme.accent.opacity(theme.isAMOLED ? 0.24 : 0.30),
                 theme.separator.opacity(0.20),
               ],
               startPoint: .topLeading,
@@ -116,19 +126,26 @@ struct GlassRoundedSurface: View {
 
   var body: some View {
     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-      .fill(
-        theme.isAMOLED
-          ? AnyShapeStyle(Color.black.opacity(0.94))
-          : AnyShapeStyle(.ultraThinMaterial)
-      )
+      .fill(.ultraThinMaterial)
+      .overlay {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+          .fill(
+            theme.isAMOLED
+              ? Color.black.opacity(0.38)
+              : theme.usesLightBackground
+                ? Color.white.opacity(0.40) : Color.white.opacity(0.035)
+          )
+      }
       .overlay {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
           .fill(
             LinearGradient(
               colors: [
-                Color.white.opacity(theme.isAMOLED ? 0.025 : 0.30),
-                theme.accent.opacity(theme.isAMOLED ? (emphasized ? 0.07 : 0.025) : (emphasized ? 0.13 : 0.05)),
-                theme.surface.opacity(theme.isAMOLED ? 0.08 : 0.20),
+                Color.white.opacity(
+                  theme.isAMOLED ? 0.10 : theme.usesLightBackground ? 0.40 : 0.30),
+                theme.accent.opacity(theme.isAMOLED ? (emphasized ? 0.13 : 0.07) : (emphasized ? 0.13 : 0.05)),
+                theme.surface.opacity(
+                  theme.isAMOLED ? 0.16 : theme.usesLightBackground ? 0.06 : 0.20),
               ],
               startPoint: .topLeading,
               endPoint: .bottomTrailing
@@ -140,8 +157,8 @@ struct GlassRoundedSurface: View {
           .stroke(
             LinearGradient(
               colors: [
-                Color.white.opacity(theme.isAMOLED ? 0.11 : 0.76),
-                theme.accent.opacity(theme.isAMOLED ? 0.17 : 0.28),
+                Color.white.opacity(theme.isAMOLED ? 0.28 : 0.76),
+                theme.accent.opacity(theme.isAMOLED ? 0.23 : 0.28),
                 theme.separator.opacity(0.18),
               ],
               startPoint: .topLeading,
@@ -152,6 +169,55 @@ struct GlassRoundedSurface: View {
       }
       .shadow(color: theme.accent.opacity(emphasized ? 0.10 : 0.025), radius: 10, y: 5)
       .shadow(color: Color.black.opacity(theme.isAMOLED ? 0.28 : 0.07), radius: 8, y: 4)
+  }
+}
+
+struct GlassCircleSurface: View {
+  let theme: AppTheme
+  var emphasized = false
+
+  var body: some View {
+    Circle()
+      .fill(.ultraThinMaterial)
+      .overlay {
+        Circle().fill(
+          theme.isAMOLED
+            ? Color.black.opacity(0.38)
+            : theme.usesLightBackground
+              ? Color.white.opacity(0.40) : Color.white.opacity(0.035)
+        )
+      }
+      .overlay {
+        Circle().fill(
+          LinearGradient(
+            colors: [
+              Color.white.opacity(
+                theme.isAMOLED ? 0.11 : theme.usesLightBackground ? 0.40 : 0.30),
+              theme.accent.opacity(emphasized ? 0.15 : 0.07),
+              theme.surface.opacity(
+                theme.isAMOLED ? 0.16 : theme.usesLightBackground ? 0.05 : 0.14),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+          )
+        )
+      }
+      .overlay {
+        Circle().stroke(
+          LinearGradient(
+            colors: [
+              Color.white.opacity(theme.isAMOLED ? 0.30 : 0.74),
+              theme.accent.opacity(theme.isAMOLED ? 0.24 : 0.30),
+              theme.separator.opacity(0.18),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+          ),
+          lineWidth: 1
+        )
+      }
+      .shadow(color: theme.accent.opacity(emphasized ? 0.11 : 0.035), radius: 7, y: 3)
+      .shadow(color: Color.black.opacity(theme.isAMOLED ? 0.26 : 0.06), radius: 5, y: 2)
   }
 }
 
@@ -166,13 +232,15 @@ struct CleanButtonStyle: ButtonStyle {
       .frame(maxWidth: .infinity, minHeight: 42)
       .padding(.horizontal, 18)
       .background {
-        RoundedRectangle(cornerRadius: 21, style: .continuous)
-          .fill(filled ? theme.foreground : theme.background.opacity(0.001))
-          .overlay {
-            RoundedRectangle(cornerRadius: 21, style: .continuous)
-              .stroke(
-                theme.foreground.opacity(configuration.isPressed ? 0.55 : 0.82), lineWidth: 1.25)
-          }
+        GlassRoundedSurface(
+          theme: theme,
+          cornerRadius: 21,
+          emphasized: filled || configuration.isPressed
+        )
+        .overlay {
+          RoundedRectangle(cornerRadius: 21, style: .continuous)
+            .fill(filled ? theme.foreground.opacity(0.62) : Color.clear)
+        }
       }
       .scaleEffect(configuration.isPressed ? 0.975 : 1)
       .opacity(configuration.isPressed ? 0.82 : 1)
@@ -191,10 +259,13 @@ struct AndroidPillButtonStyle: ButtonStyle {
       .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
       .padding(.horizontal, 20)
       .background {
-        if filled {
-          Capsule(style: .continuous).fill(theme.foreground)
-        } else {
-          GlassCapsuleSurface(theme: theme, emphasized: configuration.isPressed)
+        GlassCapsuleSurface(
+          theme: theme,
+          emphasized: filled || configuration.isPressed
+        )
+        .overlay {
+          Capsule(style: .continuous)
+            .fill(filled ? theme.foreground.opacity(0.62) : Color.clear)
         }
       }
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
@@ -214,17 +285,34 @@ struct RoundIconButtonStyle: ButtonStyle {
       .foregroundStyle(filled ? theme.background : theme.foreground.opacity(0.76))
       .frame(width: size, height: size)
       .background {
-        if filled {
-          Circle().fill(theme.foreground)
-        } else {
-          Circle()
-            .fill(.ultraThinMaterial)
-            .overlay(Circle().fill(theme.accent.opacity(0.06)))
-            .overlay(Circle().stroke(Color.white.opacity(theme.isAMOLED ? 0.26 : 0.62), lineWidth: 1))
-            .shadow(color: theme.accent.opacity(0.10), radius: 8, y: 3)
-        }
+        GlassCircleSurface(theme: theme, emphasized: filled || configuration.isPressed)
+          .overlay {
+            Circle().fill(filled ? theme.foreground.opacity(0.46) : Color.clear)
+          }
       }
       .scaleEffect(configuration.isPressed ? 0.9 : 1)
+      .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
+  }
+}
+
+struct GlassDestructivePillButtonStyle: ButtonStyle {
+  let theme: AppTheme
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.rubik(14, weight: .medium))
+      .foregroundStyle(theme.mine)
+      .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
+      .padding(.horizontal, 20)
+      .background {
+        GlassCapsuleSurface(theme: theme, emphasized: configuration.isPressed)
+          .overlay {
+            Capsule(style: .continuous)
+              .fill(theme.mine.opacity(configuration.isPressed ? 0.18 : 0.08))
+          }
+      }
+      .scaleEffect(configuration.isPressed ? 0.985 : 1)
+      .opacity(configuration.isPressed ? 0.72 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
   }
 }
@@ -403,10 +491,9 @@ struct ReplicaScreenHeader: View {
         Button(action: dismiss) {
           BackArrowIcon(color: theme.foreground)
             .frame(width: 28, height: 28)
-            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
         .accessibilityLabel("Back")
         .accessibilityIdentifier("replica.back")
         Spacer()

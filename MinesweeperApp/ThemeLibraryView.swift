@@ -34,6 +34,7 @@ struct ThemeLibraryView: View {
 }
 
 private struct ThemeCard: View {
+  @Environment(AppStore.self) private var store
   let theme: AppTheme
   let selected: Bool
 
@@ -56,7 +57,13 @@ private struct ThemeCard: View {
     }
     .padding(.horizontal, 14)
     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.background))
+    .background {
+      GlassRoundedSurface(theme: store.theme, cornerRadius: 7, emphasized: selected)
+        .overlay {
+          RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(theme.background.opacity(store.theme.isAMOLED ? 0.54 : 0.66))
+        }
+    }
     .overlay(
       RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(
         selected ? theme.accent.opacity(0.68) : theme.muted.opacity(0.18),

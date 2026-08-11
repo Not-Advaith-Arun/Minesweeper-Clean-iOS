@@ -94,9 +94,7 @@ struct SettingsView: View {
           .padding(.top, 42)
 
           Button("Reset to defaults", role: .destructive) { showResetConfirmation = true }
-            .font(.rubik(14, weight: .medium))
-            .foregroundStyle(theme.mine)
-            .padding(.vertical, 14)
+            .buttonStyle(GlassDestructivePillButtonStyle(theme: theme))
             .padding(.top, 42)
             .accessibilityIdentifier("settings.reset")
         }
@@ -167,14 +165,20 @@ private struct SettingsPicker: View {
                 selection == action ? store.theme.background : store.theme.foreground
               )
               .frame(maxWidth: .infinity, minHeight: 38)
-              .background(
-                Capsule().fill(
-                  selection == action
-                    ? store.theme.foreground : store.theme.background.opacity(0.01))
-              )
-              .overlay(
-                Capsule().stroke(
-                  store.theme.foreground.opacity(0.45), lineWidth: selection == action ? 0 : 1))
+              .background {
+                GlassCapsuleSurface(
+                  theme: store.theme,
+                  emphasized: selection == action
+                )
+                .overlay {
+                  Capsule(style: .continuous)
+                    .fill(
+                      selection == action
+                        ? store.theme.covered.opacity(0.78)
+                        : store.theme.accent.opacity(0.025)
+                    )
+                }
+              }
           }
           .buttonStyle(.plain)
         }

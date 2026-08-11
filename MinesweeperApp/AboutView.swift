@@ -32,7 +32,7 @@ struct AboutView: View {
           .font(.rubik(12, weight: .regular))
           .foregroundStyle(theme.muted)
 
-        Text("Reference v1.21.3  •  Rubik (OFL 1.1)  •  Material Design Icons (Apache 2.0)")
+        Text("Reference v1.22.1  •  Rubik (OFL 1.1)  •  Material Design Icons (Apache 2.0)")
           .font(.rubik(10))
           .multilineTextAlignment(.center)
           .foregroundStyle(theme.muted)

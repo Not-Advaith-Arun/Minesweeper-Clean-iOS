@@ -273,16 +273,9 @@ private struct GameStatusBar: View {
         HStack {
           Button(action: onClose) {
             BackArrowIcon(color: store.theme.foreground.opacity(0.82))
-              .frame(width: 54, height: 54)
-              .background {
-                Circle()
-                  .fill(.ultraThinMaterial)
-                  .overlay(Circle().fill(store.theme.accent.opacity(0.045)))
-                  .overlay(Circle().stroke(Color.white.opacity(store.theme.isAMOLED ? 0.18 : 0.42), lineWidth: 0.8))
-                  .frame(width: 46, height: 46)
-              }
+              .frame(width: 28, height: 28)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 46))
           .accessibilityLabel("Back")
           .accessibilityIdentifier("game.back")
 
@@ -298,16 +291,8 @@ private struct GameStatusBar: View {
               holeColor: store.theme.background
             )
               .frame(width: 27, height: 27)
-              .frame(width: 56, height: 56)
-              .background {
-                Circle()
-                  .fill(.ultraThinMaterial)
-                  .overlay(Circle().fill(store.theme.accent.opacity(0.045)))
-                  .overlay(Circle().stroke(Color.white.opacity(store.theme.isAMOLED ? 0.18 : 0.42), lineWidth: 0.8))
-                  .frame(width: 46, height: 46)
-              }
           }
-          .buttonStyle(.plain)
+          .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 46))
           .accessibilityLabel("Theme picker")
         }
         .padding(.horizontal, 1)
@@ -474,9 +459,8 @@ private struct EndGameControls: View {
     } label: {
       Image(systemName: symbol)
         .font(.system(size: 18, weight: .regular))
-        .frame(width: 44, height: 44)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 44))
   }
 }
 

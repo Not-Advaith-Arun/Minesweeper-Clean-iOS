@@ -115,6 +115,7 @@ struct AppTheme: Identifiable, Hashable {
   let mine: Color
   let clueColors: [Color]
   let isAMOLED: Bool
+  let usesLightBackground: Bool
 
   init(
     id: String,
@@ -144,6 +145,10 @@ struct AppTheme: Identifiable, Hashable {
     self.mine = Color(hex: mine)
     self.clueColors = clues.map { Color(hex: $0) }
     self.isAMOLED = isAMOLED
+    let red = Double((background >> 16) & 0xFF) / 255
+    let green = Double((background >> 8) & 0xFF) / 255
+    let blue = Double(background & 0xFF) / 255
+    self.usesLightBackground = 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.62
   }
 
   func clue(_ value: Int) -> Color {

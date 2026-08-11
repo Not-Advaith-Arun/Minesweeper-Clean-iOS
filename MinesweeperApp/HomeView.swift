@@ -21,9 +21,8 @@ struct HomeView: View {
             holeColor: theme.background
           )
             .frame(width: 27, height: 27)
-            .frame(width: 48, height: 48)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RoundIconButtonStyle(theme: theme, size: 48))
         .accessibilityLabel("Themes")
         .accessibilityIdentifier("home.quickThemes")
         .position(x: width - 32, y: height * 0.083)
@@ -89,9 +88,9 @@ private struct DifficultyCarousel: View {
       Button {
         move(-1)
       } label: {
-        Image(systemName: "chevron.left").frame(width: 34, height: 34)
+        Image(systemName: "chevron.left")
       }
-      .buttonStyle(.plain)
+      .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
       .opacity(0)
       .accessibilityHidden(true)
 
@@ -111,10 +110,9 @@ private struct DifficultyCarousel: View {
       } label: {
         Image(systemName: "chevron.right")
           .font(.system(size: 31, weight: .light))
-          .frame(width: 44, height: 44)
           .foregroundStyle(theme.foreground.opacity(0.54))
       }
-      .buttonStyle(.plain)
+      .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
     }
     .foregroundStyle(theme.foreground.opacity(0.78))
     .accessibilityElement(children: .combine)
@@ -157,19 +155,9 @@ private struct HomeActionBar: View {
         .renderingMode(.template)
         .scaledToFit()
         .frame(width: 19, height: 19)
-        .frame(width: 48, height: 48)
         .foregroundStyle(store.theme.foreground.opacity(0.72))
-        .background {
-          Circle()
-            .fill(.ultraThinMaterial)
-            .overlay(Circle().fill(store.theme.accent.opacity(0.045)))
-            .overlay(
-              Circle().stroke(
-                Color.white.opacity(store.theme.isAMOLED ? 0.20 : 0.48), lineWidth: 0.8)
-            )
-        }
     }
-    .buttonStyle(.plain)
+    .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 48))
     .accessibilityLabel(label)
     .accessibilityIdentifier("home.\(label.lowercased())")
   }
