@@ -156,7 +156,7 @@ final class BoardGenerationTests: XCTestCase {
     // The simulator job runs with code coverage and is not a stable wall-clock
     // benchmark. Portable CI still enforces a hosted-runner budget, while
     // normal local and on-device runs keep the tighter performance guard.
-#if !targetEnvironment(simulator)
+#if !DEBUG && !targetEnvironment(simulator)
     let timeBudget = ProcessInfo.processInfo.environment["CI"] == "true" ? 4.0 : 3.0
 #endif
     let samples: [(CellCoordinate, UInt64)] = [
@@ -168,7 +168,7 @@ final class BoardGenerationTests: XCTestCase {
     ]
 
     for (firstReveal, seed) in samples {
-#if !targetEnvironment(simulator)
+#if !DEBUG && !targetEnvironment(simulator)
       let startedAt = Date()
 #endif
       let board = try generator.generate(
@@ -176,7 +176,7 @@ final class BoardGenerationTests: XCTestCase {
         firstReveal: firstReveal,
         seed: seed
       )
-#if !targetEnvironment(simulator)
+#if !DEBUG && !targetEnvironment(simulator)
       let elapsed = Date().timeIntervalSince(startedAt)
 #endif
       let report = solver.verify(board, firstReveal: firstReveal)
@@ -188,11 +188,150 @@ final class BoardGenerationTests: XCTestCase {
         !board.isMine(at: $0)
       })
       XCTAssertTrue(report.isSolved)
-      XCTAssertGreaterThanOrEqual(scorer.threeBV(board), 150)
+      XCTAssertGreaterThanOrEqual(scorer.threeBV(board), 350)
       XCTAssertGreaterThanOrEqual(report.deductionPasses, 20)
-#if !targetEnvironment(simulator)
+      XCTAssertGreaterThanOrEqual(report.advancedDeductionPasses, 4)
+      let metrics = BoardDistributionScorer().metrics(board)
+      XCTAssertTrue(
+        BoardDistributionLimits().admits(metrics),
+        "opening \(firstReveal) produced a patterned layout: \(metrics)"
+      )
+#if !DEBUG && !targetEnvironment(simulator)
       XCTAssertLessThan(elapsed, timeBudget, "Extreme generation took \(elapsed)s")
 #endif
+    }
+  }
+
+  /// The generator used to build Extreme from modular templates, which produced boards whose
+  /// mines sat on visible diagonal stripes. These fixtures pin the metric that detects that:
+  /// every deliberate lattice has to fail, and both ordinary and cluster-heavy random layouts
+  /// have to pass, so the check cannot be satisfied by simply spreading mines apart.
+  func testDistributionMetricsRejectLatticesAndAcceptClusters() {
+    let configuration = Difficulty.extreme.configuration
+    let scorer = BoardDistributionScorer()
+    let limits = BoardDistributionLimits()
+    let cells = (0..<configuration.cellCount).compactMap(configuration.coordinate)
+
+    func board(orderedBy residue: (CellCoordinate) -> Int) -> GeneratedBoard {
+      let ordered = cells.sorted { left, right in
+        let leftResidue = residue(left)
+        let rightResidue = residue(right)
+        return leftResidue == rightResidue ? left < right : leftResidue < rightResidue
+      }
+      return GeneratedBoard(
+        configuration: configuration,
+        seed: 1,
+        mines: Set(ordered.prefix(configuration.mineCount))
+      )
+    }
+
+    let lattices: [(String, GeneratedBoard)] = [
+      ("horizontal stripes", board { $0.row % 4 }),
+      ("vertical stripes", board { $0.column % 4 }),
+      ("diagonal bands", board { (($0.row + 2 * $0.column) % 13 + 13) % 13 }),
+      ("checkerboard", board { ($0.row + $0.column) % 2 }),
+    ]
+    for (name, lattice) in lattices {
+      let metrics = scorer.metrics(lattice)
+      XCTAssertFalse(limits.admits(metrics), "\(name) was accepted: \(metrics)")
+    }
+
+    var random = SplitMix64(seed: 4_242)
+    func shuffled(_ values: [CellCoordinate]) -> [CellCoordinate] {
+      var pool = values
+      for position in stride(from: pool.count - 1, to: 0, by: -1) {
+        pool.swapAt(position, random.next(upperBound: position + 1))
+      }
+      return pool
+    }
+
+    let uniform = GeneratedBoard(
+      configuration: configuration,
+      seed: 2,
+      mines: Set(shuffled(cells).prefix(configuration.mineCount))
+    )
+    XCTAssertTrue(limits.admits(scorer.metrics(uniform)), "a uniform layout must pass")
+
+    // Ten planted 2×2 blocks: far more clustering than the generator produces on its own.
+    var clustered: Set<CellCoordinate> = []
+    for anchor in shuffled(cells) where clustered.count < 40 {
+      guard anchor.row + 1 < configuration.height, anchor.column + 1 < configuration.width
+      else { continue }
+      let block = [
+        anchor,
+        CellCoordinate(row: anchor.row, column: anchor.column + 1),
+        CellCoordinate(row: anchor.row + 1, column: anchor.column),
+        CellCoordinate(row: anchor.row + 1, column: anchor.column + 1),
+      ]
+      guard block.allSatisfy({ !clustered.contains($0) }) else { continue }
+      clustered.formUnion(block)
+    }
+    for cell in shuffled(cells) where clustered.count < configuration.mineCount {
+      clustered.insert(cell)
+    }
+    let clusteredBoard = GeneratedBoard(
+      configuration: configuration,
+      seed: 3,
+      mines: Set(clustered.sorted().prefix(configuration.mineCount))
+    )
+    XCTAssertGreaterThanOrEqual(scorer.solidTwoByTwoBlockCount(clusteredBoard), 8)
+    XCTAssertTrue(
+      limits.admits(scorer.metrics(clusteredBoard)),
+      "clustered layouts are legitimate Minesweeper structure and must pass"
+    )
+  }
+
+  /// Extreme layouts have to look like random layouts, not like a construction. Mine repulsion
+  /// is as much a fingerprint as a stripe is, so this also requires the sample to contain solid
+  /// 2×2 mine groups at roughly the rate chance produces them.
+  func testExtremeLayoutsStayStatisticallyRandom() throws {
+    let configuration = Difficulty.extreme.configuration
+    let firstReveal = CellCoordinate(row: 16, column: 9)
+    let generator = HardNoGuessBoardGenerator()
+    let scorer = BoardDistributionScorer()
+    let limits = BoardDistributionLimits()
+
+    var blockTotal = 0
+    for offset in 0..<6 {
+      let board = try generator.generate(
+        configuration: configuration,
+        firstReveal: firstReveal,
+        seed: UInt64(660_000 + offset)
+      )
+      let metrics = scorer.metrics(board)
+      XCTAssertTrue(limits.admits(metrics), "seed \(offset) produced \(metrics)")
+      blockTotal += metrics.solidTwoByTwoBlockCount
+    }
+    XCTAssertGreaterThan(
+      blockTotal, 0,
+      "no 2×2 mine group in six boards means the generator is pushing mines apart again"
+    )
+  }
+
+  func testExtremeUsesFreshSeededLayoutsForTheSameOpening() throws {
+    let configuration = Difficulty.extreme.configuration
+    let firstReveal = CellCoordinate(row: 16, column: 9)
+    let generator = HardNoGuessBoardGenerator()
+    let boards = try (0..<5).map { offset in
+      try generator.generate(
+        configuration: configuration,
+        firstReveal: firstReveal,
+        seed: UInt64(810_000 + offset)
+      )
+    }
+
+    XCTAssertEqual(Set(boards.map(\.mines)).count, boards.count)
+    let pairwiseMineDifferences = boards.indices.flatMap { left in
+      boards.indices.compactMap { right in
+        left < right ? boards[left].mines.symmetricDifference(boards[right].mines).count : nil
+      }
+    }
+    XCTAssertGreaterThanOrEqual(pairwiseMineDifferences.min() ?? 0, 80)
+    for board in boards {
+      let report = NoGuessSolver().verify(board, firstReveal: firstReveal)
+      XCTAssertTrue(report.isSolved)
+      XCTAssertGreaterThanOrEqual(BoardDifficultyScorer().threeBV(board), 350)
+      XCTAssertGreaterThanOrEqual(report.advancedDeductionPasses, 4)
     }
   }
 
@@ -229,6 +368,7 @@ final class BoardGenerationTests: XCTestCase {
   func testProductionGenerationPoliciesAreVerifiedAndChallenging() throws {
     let scorer = BoardDifficultyScorer()
     var scores: [Difficulty: [Int]] = [:]
+    var advancedScores: [Difficulty: [Int]] = [:]
 
     for (difficultyIndex, difficulty) in Difficulty.allCases.enumerated() {
       let configuration = difficulty.configuration
@@ -256,11 +396,10 @@ final class BoardGenerationTests: XCTestCase {
           configuration.neighbors(of: firstReveal).allSatisfy { !board.isMine(at: $0) },
           difficulty.rawValue
         )
-        XCTAssertTrue(
-          NoGuessSolver().verify(board, firstReveal: firstReveal).isSolved,
-          difficulty.rawValue
-        )
+        let report = NoGuessSolver().verify(board, firstReveal: firstReveal)
+        XCTAssertTrue(report.isSolved, difficulty.rawValue)
         scores[difficulty, default: []].append(scorer.threeBV(board))
+        advancedScores[difficulty, default: []].append(report.advancedDeductionPasses)
       }
     }
 
@@ -269,6 +408,11 @@ final class BoardGenerationTests: XCTestCase {
     XCTAssertGreaterThan(averages[.medium, default: 0], averages[.easy, default: 0])
     XCTAssertGreaterThan(averages[.hard, default: 0], averages[.medium, default: 0])
     XCTAssertGreaterThan(averages[.huge, default: 0], averages[.hard, default: 0])
-    XCTAssertGreaterThan(averages[.extreme, default: 0], averages[.huge, default: 0])
+    XCTAssertGreaterThanOrEqual(averages[.extreme, default: 0], 350)
+    let advancedAverages = advancedScores.mapValues { values in values.reduce(0, +) / values.count }
+    XCTAssertGreaterThan(
+      advancedAverages[.extreme, default: 0],
+      advancedAverages[.huge, default: 0]
+    )
   }
 }

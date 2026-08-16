@@ -4,6 +4,8 @@ An offline, ad-free iPhone portrait recreation of **Minesweeper — The Clean On
 
 No backend is required. Saves, settings, themes, and the personal leaderboard are stored locally on the device; there are no accounts, API keys, hosted databases, or network calls.
 
+Extreme uses a provided centre starting cell so its next board can be prepared off the interaction path. Every Extreme layout is independently verified no-guess, keeps a 350+ 3BV floor, and requires advanced subset or exact-constraint deductions. Layouts start as uniformly random mine placements and are repaired into solvable boards by solver-directed perturbation, so adjacent mines, runs, and 2×2 groups occur at their natural rates; a spectral and long-lag distribution check rejects anything carrying a repeated lattice.
+
 ## Requirements
 
 - macOS with Xcode 16 or newer
