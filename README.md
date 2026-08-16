@@ -1,6 +1,6 @@
 # Minesweeper — private iOS recreation
 
-An offline, ad-free iPhone portrait recreation of **Minesweeper — The Clean One** for personal use. It contains a pure Swift game engine, verified no-guess generation, per-difficulty autosaves and times, the full settings surface, 32 local themes, and a custom zoomable UIKit board renderer inside a SwiftUI application.
+An offline, ad-free iPhone and iPad portrait recreation of **Minesweeper — The Clean One** for personal use. It contains a pure Swift game engine, verified no-guess generation, per-difficulty autosaves and times, the full settings surface, 33 local themes, and a custom zoomable UIKit board renderer inside a SwiftUI application.
 
 No backend is required. Saves, settings, themes, and the personal leaderboard are stored locally on the device; there are no accounts, API keys, hosted databases, or network calls.
 
@@ -8,17 +8,17 @@ Extreme uses a provided centre starting cell so its next board can be prepared o
 
 ## Requirements
 
-- macOS with Xcode 16 or newer
+- macOS with Xcode 26 or newer
 - iOS 17 or newer
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 - A free or paid Apple developer account for device signing
 
-## Run on an iPhone
+## Run on an iPhone or iPad
 
 1. Run `make generate`.
 2. Open `Minesweeper.xcodeproj`.
 3. Select the **Minesweeper** target, choose your signing team, and keep the private bundle identifier or replace it with your own unique identifier.
-4. Connect your iPhone, select it as the run destination, and press Run.
+4. Connect your iPhone or iPad, select it as the run destination, and press Run.
 
 Free Apple IDs normally require the app to be re-signed periodically. This repository contains no App Store, advertising, analytics, or purchase integration.
 
@@ -29,8 +29,8 @@ The private repository includes an `iOS CI and unsigned IPA` workflow for people
 1. Open the repository's **Actions** tab and select the newest successful `iOS CI and unsigned IPA` run.
 2. Download the private `Minesweeper-unsigned-ipa` artifact and extract it.
 3. Optionally verify `Minesweeper-unsigned.ipa` against the included SHA-256 file.
-4. Connect and trust the iPhone on the Windows or macOS computer where Sideloadly is configured.
-5. Enable Developer Mode on the iPhone, drag the IPA into Sideloadly, select the phone, and start the install.
+4. Connect and trust the iPhone or iPad on the Windows or macOS computer where Sideloadly is configured.
+5. Enable Developer Mode on the device, drag the IPA into Sideloadly, select the device, and start the install.
 
 The unsigned IPA artifact is retained for 14 days and remains visible only to accounts with access to the private repository. Sideloadly performs signing locally; GitHub never receives the Apple ID used for installation.
 

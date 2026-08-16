@@ -203,7 +203,7 @@ public struct GameSettings: Equatable, Codable, Sendable {
     self.longPressDelayMilliseconds = longPressDelayMilliseconds.clamped(to: 100...500)
     self.easyDiggingEnabled = easyDiggingEnabled
     self.easyFlaggingEnabled = easyFlaggingEnabled
-    self.animationSpeedPercent = animationSpeedPercent.clamped(to: 0...150)
+    self.animationSpeedPercent = animationSpeedPercent.clamped(to: 0...200)
     self.vibrationEnabled = vibrationEnabled
     self.vibrationDurationMilliseconds = vibrationDurationMilliseconds.clamped(to: 5...200)
     normalizeDependencies()
@@ -211,7 +211,7 @@ public struct GameSettings: Equatable, Codable, Sendable {
 
   public mutating func normalizeDependencies() {
     longPressDelayMilliseconds = longPressDelayMilliseconds.clamped(to: 100...500)
-    animationSpeedPercent = animationSpeedPercent.clamped(to: 0...150)
+    animationSpeedPercent = animationSpeedPercent.clamped(to: 0...200)
     vibrationDurationMilliseconds = vibrationDurationMilliseconds.clamped(to: 5...200)
     if !longPressEnabled { showsActionToggle = true }
   }

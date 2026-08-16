@@ -32,6 +32,8 @@ struct GameView: View {
         isLoading: session.isLoading,
         changedCoordinates: session.lastChangedCoordinates,
         actionCoordinate: session.lastActionCoordinate,
+        fixedStartCoordinate: session.fixedStartCoordinate,
+        isFixedStartEnabled: session.isExtremeStartEnabled,
         theme: theme,
         showsBorders: store.settings.cellBorders,
         animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed,
@@ -58,14 +60,11 @@ struct GameView: View {
 
       if session.phase.isFinished, showEndControls, !showResult {
         GeometryReader { geometry in
-          VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            EndGameControls(
-              currentDifficulty: difficulty,
-              regionHeight: max(140, geometry.size.height * 0.25),
-              onRestart: startNewGame
-            )
-          }
+          EndGameControls(
+            currentDifficulty: difficulty,
+            onRestart: startNewGame
+          )
+          .position(x: geometry.size.width / 2, y: geometry.size.height * 0.77)
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
       } else if (session.phase == .playing || (session.phase.isFinished && !showEndControls))
@@ -115,6 +114,7 @@ struct GameView: View {
     .toolbar(.hidden, for: .navigationBar)
     .navigationBarBackButtonHidden(true)
     .onAppear {
+      session.viewDidAppear()
       session.updateSettings(store.settings)
       session.resumeTimerIfNeeded()
       if session.phase.isFinished { showEndControls = true }
@@ -140,7 +140,7 @@ struct GameView: View {
         // restart controls only after those animations have settled.
       } else if current == .playing, previous == .ready {
         let delay = !reduceMotion && store.settings.animationSpeed > 0
-          ? 0.78 * 100 / store.settings.animationSpeed : 0
+          ? ReplicaMotion.duration(0.78, speedPercent: store.settings.animationSpeed) : 0
         guard delay > 0 else {
           showActionToggle = true
           return
@@ -167,9 +167,9 @@ struct GameView: View {
       store.clearSavedGame(difficulty)
       showEndControls = false
       showResult = false
-      let baseDelay = current == .won ? 0.70 : 1.05
+      let baseDelay = current == .won ? 0.86 : 1.24
       let delay = !reduceMotion && store.settings.animationSpeed > 0
-        ? baseDelay * 100 / store.settings.animationSpeed : 0
+        ? ReplicaMotion.duration(baseDelay, speedPercent: store.settings.animationSpeed) : 0
       Task {
         try? await Task.sleep(for: .seconds(delay))
         guard session.phase == current else { return }
@@ -177,7 +177,9 @@ struct GameView: View {
           store.settings.animationSpeed > 0,
           !reduceMotion
         {
-          .easeOut(duration: 0.12 * 100 / store.settings.animationSpeed)
+          .easeOut(
+            duration: ReplicaMotion.duration(
+              0.12, speedPercent: store.settings.animationSpeed))
         } else {
           ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)
         }
@@ -247,7 +249,7 @@ struct GameView: View {
     }
 
     let delay = !reduceMotion && store.settings.animationSpeed > 0
-      ? 0.20 * 100 / store.settings.animationSpeed : 0
+      ? ReplicaMotion.duration(0.20, speedPercent: store.settings.animationSpeed) : 0
     restartTask = Task { @MainActor in
       try? await Task.sleep(for: .seconds(delay))
       guard !Task.isCancelled else { return }
@@ -362,8 +364,9 @@ private struct ActionToggle: View {
       actionButton(.flag)
     }
     .padding(6)
-    .background(GlassCapsuleSurface(theme: store.theme, emphasized: true))
-    .accessibilityIdentifier("game.actionToggle")
+    // The shared capsule is decorative glass. The two child buttons own the
+    // interaction so Liquid Glass cannot collapse their independent hit areas.
+    .adaptiveGlassCapsule(theme: store.theme, emphasized: true, isInteractive: false)
   }
 
   private func actionButton(_ mode: PrimaryAction) -> some View {
@@ -389,6 +392,10 @@ private struct ActionToggle: View {
         }
       }
         .frame(width: 46, height: 46)
+        // Plain buttons otherwise use only the rendered icon pixels for hit
+        // testing. Give each segment its full visual area so taps cannot fall
+        // through the transparent label into the UIKit board underneath.
+        .contentShape(Rectangle())
         .background {
           if session.actionMode == mode {
             Circle().fill(store.theme.covered)
@@ -397,6 +404,7 @@ private struct ActionToggle: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(mode.title)
+    .accessibilityValue(session.actionMode == mode ? "Selected" : "Not selected")
     .accessibilityAddTraits(session.actionMode == mode ? .isSelected : [])
   }
 }
@@ -405,16 +413,13 @@ private struct ActionToggle: View {
 private struct EndGameControls: View {
   @Environment(AppStore.self) private var store
   @State private var selection: ReplicaDifficulty
-  let regionHeight: CGFloat
   let onRestart: (ReplicaDifficulty) -> Void
 
   init(
     currentDifficulty: ReplicaDifficulty,
-    regionHeight: CGFloat,
     onRestart: @escaping (ReplicaDifficulty) -> Void
   ) {
     _selection = State(initialValue: currentDifficulty)
-    self.regionHeight = regionHeight
     self.onRestart = onRestart
   }
 
@@ -436,16 +441,9 @@ private struct EndGameControls: View {
     }
     .foregroundStyle(store.theme.foreground.opacity(0.84))
     .padding(.horizontal, 50)
-    .padding(.bottom, 24)
-    .frame(maxWidth: .infinity, minHeight: regionHeight, alignment: .bottom)
-    .background {
-      LinearGradient(
-        colors: [store.theme.background.opacity(0), store.theme.background.opacity(0.92)],
-        startPoint: .top,
-        endPoint: .center
-      )
-      .background(.ultraThinMaterial.opacity(0.38))
-    }
+    // Match the phone composition without letting the pill stretch across an
+    // iPad or a wide Stage Manager window.
+    .frame(maxWidth: 440)
   }
 
   private func difficultyArrow(_ symbol: String, offset: Int) -> some View {
@@ -517,7 +515,7 @@ private struct ResultCard: View {
     .foregroundStyle(store.theme.foreground)
     .padding(17)
     .frame(maxWidth: 360)
-    .background(GlassRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true))
+    .background(SemiMatteRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true))
   }
 
   private static let dateFormatter: DateFormatter = {

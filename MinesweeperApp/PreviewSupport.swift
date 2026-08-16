@@ -28,6 +28,8 @@
       isLoading: false,
       changedCoordinates: [],
       actionCoordinate: nil,
+      fixedStartCoordinate: nil,
+      isFixedStartEnabled: false,
       theme: ThemeCatalog.fallback,
       showsBorders: true,
       animationSpeed: 100,

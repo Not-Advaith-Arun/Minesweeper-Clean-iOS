@@ -49,6 +49,8 @@ struct TimesView: View {
           .scrollContentBackground(.hidden)
           .listStyle(.plain)
           .padding(.horizontal, 14)
+          .frame(maxWidth: 680)
+          .frame(maxWidth: .infinity)
         }
     }
     .background(ReplicaBackground(theme: theme))

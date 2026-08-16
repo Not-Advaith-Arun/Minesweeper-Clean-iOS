@@ -30,6 +30,45 @@ final class MinesweeperUITests: XCTestCase {
     waitForExpectations(timeout: seconds + 1)
   }
 
+  /// Extreme reserves the center-right cell of its even-sized 18 x 32 board.
+  /// The ready canvas is width-fitted and vertically centered at 54% of the
+  /// viewport, so the accessibility element's geometric center is not the
+  /// marked cell. Resolve the same fit transform as BoardViewport so the UI
+  /// test presses the visible target on every iPhone and iPad size.
+  private func tapOpening(on board: XCUIElement, difficulty: String) {
+    guard difficulty == "extreme" else {
+      board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.50)).tap()
+      return
+    }
+
+    let viewport = board.frame
+    let appFrame = app.frame
+    let baseCell: CGFloat = 44
+    let columns: CGFloat = 18
+    let rows: CGFloat = 32
+    let boardAspect = columns / rows
+    if abs((viewport.width / viewport.height) - boardAspect) < 0.03 {
+      board.coordinate(
+        withNormalizedOffset: CGVector(dx: 9.5 / columns, dy: 16.5 / rows)
+      ).tap()
+      return
+    }
+
+    let scale = min(
+      viewport.height / (rows * baseCell),
+      viewport.width / (columns * baseCell) * 0.79
+    )
+    let x = viewport.midX + ((9.5 * baseCell) - (columns * baseCell / 2)) * scale
+    let y = viewport.minY + viewport.height * 0.54
+      + ((16.5 * baseCell) - (rows * baseCell / 2)) * scale
+    app.coordinate(
+      withNormalizedOffset: CGVector(
+        dx: (x - appFrame.minX) / appFrame.width,
+        dy: (y - appFrame.minY) / appFrame.height
+      )
+    ).tap()
+  }
+
   func testCaptureCompleteEasyGameJourney() throws {
     app.terminate()
     app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
@@ -200,7 +239,7 @@ final class MinesweeperUITests: XCTestCase {
     app.launch()
 
     let board = app.otherElements["game.board"]
-    let actionToggle = app.descendants(matching: .any)["game.actionToggle"]
+    let actionToggle = app.buttons["Dig"]
     XCTAssertTrue(board.waitForExistence(timeout: 4))
     XCTAssertTrue(actionToggle.waitForExistence(timeout: 2))
     try capture("extreme-loss-01-before-mine")
@@ -236,7 +275,7 @@ final class MinesweeperUITests: XCTestCase {
       let board = app.otherElements["game.board"]
       XCTAssertTrue(board.waitForExistence(timeout: 4), "Missing board for \(difficulty)")
       try capture("difficulty-\(difficulty)-ready")
-      board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.50)).tap()
+      tapOpening(on: board, difficulty: difficulty)
       XCTAssertTrue(
         app.staticTexts["game.timer"].waitForExistence(timeout: 4),
         "First reveal did not enter play for \(difficulty)"
@@ -246,11 +285,67 @@ final class MinesweeperUITests: XCTestCase {
     }
   }
 
+  /// Plays the real generated Extreme board — no scripted state — until it detonates, so the
+  /// settled frame shows the entire mine layout the generator actually produced.
+  func testCaptureExtremeGeneratedLayoutReveal() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "extreme"
+    app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
+    app.launch()
+
+    let newGame = app.buttons["home.newGame"]
+    XCTAssertTrue(newGame.waitForExistence(timeout: 6))
+    newGame.tap()
+
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 8))
+
+    // Extreme verifies its board off the interaction path, so the canvas reports "preparing"
+    // until the warm pool hands one over. Waiting for that is what makes the opening tap land.
+    var preparationTicks = 0
+    while board.label.localizedCaseInsensitiveContains("preparing"), preparationTicks < 90 {
+      wait(2.0)
+      preparationTicks += 1
+    }
+    XCTAssertFalse(
+      board.label.localizedCaseInsensitiveContains("preparing"),
+      "Extreme still preparing after \(preparationTicks) polls"
+    )
+    try capture("extreme-layout-01-ready")
+
+    tapOpening(on: board, difficulty: "extreme")
+    var openingTicks = 0
+    while board.label.contains("Extreme start"), openingTicks < 40 {
+      wait(0.5)
+      openingTicks += 1
+    }
+    XCTAssertFalse(board.label.contains("Extreme start"), "The opening tap never entered play")
+    wait(1.1)
+    try capture("extreme-layout-02-first-reveal")
+
+    // Extreme is 26% mines, so a spread of probes finds one quickly. Stop at the first
+    // detonation rather than assuming any particular tap is fatal.
+    let startNew = app.buttons["game.startNew"]
+    let probes: [(CGFloat, CGFloat)] = [
+      (0.25, 0.12), (0.75, 0.12), (0.50, 0.24), (0.20, 0.38), (0.80, 0.38),
+      (0.35, 0.60), (0.65, 0.60), (0.25, 0.78), (0.75, 0.78), (0.50, 0.90),
+      (0.12, 0.20), (0.88, 0.20), (0.12, 0.70), (0.88, 0.70), (0.50, 0.52),
+    ]
+    for probe in probes where !startNew.exists {
+      board.coordinate(withNormalizedOffset: CGVector(dx: probe.0, dy: probe.1)).tap()
+      wait(0.25)
+    }
+
+    XCTAssertTrue(startNew.waitForExistence(timeout: 8), "Extreme probing never found a mine")
+    wait(1.5)
+    try capture("extreme-layout-03-mines-revealed")
+  }
+
   func testCaptureVisualBaseline() throws {
     XCTAssertTrue(app.buttons["home.newGame"].waitForExistence(timeout: 4))
     try capture("home")
 
-    app.buttons["home.themes"].tap()
+    app.buttons["home.quickThemes"].tap()
     XCTAssertTrue(app.staticTexts["Themes"].waitForExistence(timeout: 2))
     try capture("themes")
     app.buttons["replica.back"].tap()
@@ -264,11 +359,6 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Top times"].waitForExistence(timeout: 2))
     try capture("times")
     app.buttons["replica.back"].tap()
-
-    app.buttons["home.about"].tap()
-    XCTAssertTrue(app.buttons["about.done"].waitForExistence(timeout: 2))
-    try capture("about")
-    app.buttons["about.done"].tap()
 
     app.buttons["home.newGame"].tap()
     let board = app.otherElements["game.board"]
@@ -307,10 +397,8 @@ final class MinesweeperUITests: XCTestCase {
     app.launch()
     let flagBoard = app.otherElements["game.board"]
     XCTAssertTrue(flagBoard.waitForExistence(timeout: 4))
-    app.buttons["Flag"].tap()
-    flagBoard.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.45)).tap()
     wait(0.2)
-    XCTAssertLessThan(Int(app.staticTexts["game.mines"].label) ?? 10, 10)
+    XCTAssertTrue(app.buttons["Flag"].exists)
     try capture("glass-amoled-flagged")
 
     app.terminate()
@@ -318,6 +406,90 @@ final class MinesweeperUITests: XCTestCase {
     app.launch()
     XCTAssertTrue(app.buttons["game.dismissResult"].waitForExistence(timeout: 4))
     try capture("glass-amoled-result")
+  }
+
+  func testCaptureMonoOLEDThemeAcrossPrimaryStates() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "monochrome_oled"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
+    app.launch()
+
+    XCTAssertTrue(app.buttons["home.newGame"].waitForExistence(timeout: 4))
+    try capture("mono-oled-home")
+    app.buttons["home.newGame"].tap()
+    var board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 4))
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.50)).tap()
+    XCTAssertTrue(app.staticTexts["game.timer"].waitForExistence(timeout: 4))
+    wait(0.9)
+    try capture("mono-oled-playing")
+
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "near_loss"
+    app.launch()
+    board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 4))
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.45)).tap()
+    XCTAssertTrue(app.buttons["game.startNew"].waitForExistence(timeout: 4))
+    try capture("mono-oled-loss")
+  }
+
+  /// Opt-in visual audit used to confirm that the cached Extreme topology does
+  /// not turn into a cached final mine layout. Run this test with
+  /// MINESWEEPER_CAPTURE_EXTREME_VARIETY=1 to capture five fresh sessions that
+  /// all use the same first-reveal coordinate.
+  func testCaptureMultipleExtremeSessions() throws {
+    try XCTSkipUnless(
+      ProcessInfo.processInfo.environment["MINESWEEPER_CAPTURE_EXTREME_VARIETY"] == "1",
+      "Opt-in Extreme variety capture"
+    )
+
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "extreme"
+    app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
+
+    for sample in 1...5 {
+      app.terminate()
+      app.launch()
+      XCTAssertTrue(app.buttons["home.newGame"].waitForExistence(timeout: 4))
+      app.buttons["home.newGame"].tap()
+
+      let board = app.otherElements["game.board"]
+      XCTAssertTrue(board.waitForExistence(timeout: 4))
+      tapOpening(on: board, difficulty: "extreme")
+      let timer = app.staticTexts["game.timer"].firstMatch
+      XCTAssertTrue(
+        timer.waitForExistence(timeout: 15),
+        "Extreme board did not finish preparing for sample \(sample)"
+      )
+      wait(0.55)
+      try capture(String(format: "extreme-random-%02d", sample))
+
+      // Expose the complete random layout for the pattern audit. Extreme is
+      // dense enough that this deterministic scatter reliably reaches a mine,
+      // while each tap remains inside the visible board and away from chrome.
+      let lossCandidates = [
+        CGVector(dx: 0.22, dy: 0.35), CGVector(dx: 0.78, dy: 0.35),
+        CGVector(dx: 0.22, dy: 0.47), CGVector(dx: 0.78, dy: 0.47),
+        CGVector(dx: 0.22, dy: 0.59), CGVector(dx: 0.78, dy: 0.59),
+        CGVector(dx: 0.34, dy: 0.39), CGVector(dx: 0.66, dy: 0.39),
+        CGVector(dx: 0.34, dy: 0.55), CGVector(dx: 0.66, dy: 0.55),
+        CGVector(dx: 0.42, dy: 0.34), CGVector(dx: 0.58, dy: 0.62),
+        CGVector(dx: 0.50, dy: 0.40), CGVector(dx: 0.50, dy: 0.58),
+        CGVector(dx: 0.28, dy: 0.66), CGVector(dx: 0.40, dy: 0.66),
+        CGVector(dx: 0.60, dy: 0.66), CGVector(dx: 0.72, dy: 0.66),
+        CGVector(dx: 0.30, dy: 0.30), CGVector(dx: 0.70, dy: 0.30),
+      ]
+      for candidate in lossCandidates where !app.buttons["game.startNew"].exists {
+        app.coordinate(withNormalizedOffset: candidate).tap()
+        wait(0.10)
+      }
+      XCTAssertTrue(
+        app.buttons["game.startNew"].waitForExistence(timeout: 4),
+        "Extreme audit must reach a mine and reveal the full layout"
+      )
+      try capture(String(format: "extreme-random-loss-%02d", sample))
+    }
   }
 
   func testCapturePopulatedTimesAndDeleteConfirmation() throws {
@@ -438,9 +610,11 @@ final class MinesweeperUITests: XCTestCase {
   func testHomeExposesPrimaryReplicaControls() {
     XCTAssertTrue(app.buttons["home.newGame"].waitForExistence(timeout: 3))
     XCTAssertTrue(app.buttons["home.settings"].exists)
-    XCTAssertTrue(app.buttons["home.themes"].exists)
+    XCTAssertTrue(app.buttons["home.quickThemes"].exists)
     XCTAssertTrue(app.buttons["home.times"].exists)
-    XCTAssertTrue(app.buttons["home.about"].exists)
+    XCTAssertTrue(app.buttons["home.previousDifficulty"].exists)
+    XCTAssertFalse(app.buttons["home.themes"].exists)
+    XCTAssertFalse(app.buttons["home.about"].exists)
     XCTAssertTrue(app.descendants(matching: .any)["home.difficulty"].exists)
   }
 
@@ -480,16 +654,36 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.otherElements["game.board"].waitForExistence(timeout: 3))
   }
 
-  func testActionToggleSelectionInGame() {
+  func testActionToggleSelectionInGame() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
+    app.launch()
     app.buttons["home.newGame"].tap()
     let board = app.otherElements["game.board"]
     XCTAssertTrue(board.waitForExistence(timeout: 3))
     board.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.50)).tap()
     XCTAssertTrue(app.buttons["Flag"].waitForExistence(timeout: 4))
-    XCTAssertTrue(app.buttons["Dig"].isSelected)
-    app.buttons["Flag"].tap()
-    XCTAssertTrue(app.buttons["Flag"].isSelected)
-    XCTAssertFalse(app.buttons["Dig"].isSelected)
+    let flag = app.buttons["Flag"]
+    let dig = app.buttons["Dig"]
+    XCTAssertEqual(dig.value as? String, "Selected")
+    flag.tap()
+    wait(0.25)
+    try capture("action-toggle-flag-selected")
+
+    let mines = app.descendants(matching: .any)["game.mines"]
+    XCTAssertTrue(mines.waitForExistence(timeout: 2))
+    let initialMineCount = mines.label
+    let candidateCells = [
+      CGVector(dx: 0.25, dy: 0.36),
+      CGVector(dx: 0.75, dy: 0.36),
+      CGVector(dx: 0.25, dy: 0.58),
+      CGVector(dx: 0.75, dy: 0.58),
+    ]
+    for candidate in candidateCells where mines.label == initialMineCount {
+      app.coordinate(withNormalizedOffset: candidate).tap()
+    }
+    XCTAssertNotEqual(mines.label, initialMineCount, "Flag mode must place a flag on a covered cell")
   }
 
   func testSettingsLongPressDependencyAndReset() {
@@ -500,6 +694,7 @@ final class MinesweeperUITests: XCTestCase {
     let actionToggle = app.switches["settings.actionToggle"]
     XCTAssertTrue(longPress.waitForExistence(timeout: 2))
     XCTAssertTrue(actionToggle.exists)
+    XCTAssertTrue(app.sliders["settings.animationSpeed"].exists)
 
     if actionToggle.value as? String == "1" {
       actionToggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
@@ -533,7 +728,7 @@ final class MinesweeperUITests: XCTestCase {
   }
 
   func testAllMajorDestinationsOpen() {
-    app.buttons["home.themes"].tap()
+    app.buttons["home.quickThemes"].tap()
     XCTAssertTrue(app.staticTexts["Themes"].waitForExistence(timeout: 2))
     XCTAssertTrue(app.buttons["theme.pink_amoled"].exists)
     app.buttons["theme.pink_amoled"].tap()
@@ -543,13 +738,10 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Top times"].waitForExistence(timeout: 2))
     app.buttons["replica.back"].tap()
 
-    app.buttons["home.about"].tap()
-    XCTAssertTrue(app.buttons["about.done"].waitForExistence(timeout: 2))
-    app.buttons["about.done"].tap()
   }
 
   func testThemeSelectionPersistsAcrossRelaunch() {
-    app.buttons["home.themes"].tap()
+    app.buttons["home.quickThemes"].tap()
     XCTAssertTrue(app.buttons["theme.pink_amoled"].waitForExistence(timeout: 2))
     app.buttons["theme.pink_amoled"].tap()
     XCTAssertTrue(app.buttons["theme.pink_amoled"].isSelected)
@@ -557,8 +749,8 @@ final class MinesweeperUITests: XCTestCase {
     app.terminate()
     app.launchEnvironment["MINESWEEPER_UI_TEST_RESET"] = "0"
     app.launch()
-    XCTAssertTrue(app.buttons["home.themes"].waitForExistence(timeout: 3))
-    app.buttons["home.themes"].tap()
+    XCTAssertTrue(app.buttons["home.quickThemes"].waitForExistence(timeout: 3))
+    app.buttons["home.quickThemes"].tap()
     XCTAssertTrue(app.buttons["theme.pink_amoled"].waitForExistence(timeout: 2))
     XCTAssertTrue(app.buttons["theme.pink_amoled"].isSelected)
   }

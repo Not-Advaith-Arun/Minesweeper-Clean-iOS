@@ -46,7 +46,7 @@ final class ModelsTests: XCTestCase {
     )
     XCTAssertTrue(settings.showsActionToggle)
     XCTAssertEqual(settings.longPressDelayMilliseconds, 100)
-    XCTAssertEqual(settings.animationSpeedPercent, 150)
+    XCTAssertEqual(settings.animationSpeedPercent, 200)
     XCTAssertEqual(settings.vibrationDurationMilliseconds, 5)
   }
 

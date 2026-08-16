@@ -220,7 +220,7 @@ final class AppStore {
 
   private func normalizeSettings() {
     settings.longPressDelayMilliseconds = min(500, max(100, settings.longPressDelayMilliseconds))
-    settings.animationSpeed = min(150, max(0, settings.animationSpeed))
+    settings.animationSpeed = min(200, max(0, settings.animationSpeed))
     settings.vibrationDurationMilliseconds = min(
       200, max(5, settings.vibrationDurationMilliseconds))
     if !settings.longPressEnabled { settings.showActionToggle = true }

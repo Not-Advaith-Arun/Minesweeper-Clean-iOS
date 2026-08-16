@@ -585,11 +585,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.22.1;
+				MARKETING_VERSION = 1.22.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica;
 				PRODUCT_NAME = Minesweeper;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -698,11 +698,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.22.1;
+				MARKETING_VERSION = 1.22.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xylo.MinesweeperCleanReplica;
 				PRODUCT_NAME = Minesweeper;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};

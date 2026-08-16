@@ -39,6 +39,11 @@ struct AppRootView: View {
         .presentationDragIndicator(.visible)
         .presentationBackground(store.theme.background)
     }
-    .task { await store.hydrateFromDisk() }
+    .task {
+      // Extreme's fixed opening lets its verified board begin warming as soon
+      // as the app launches, rather than after the player taps New Game.
+      await ExtremeReadyBoardPool.shared.warm()
+      await store.hydrateFromDisk()
+    }
   }
 }

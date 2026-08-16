@@ -36,188 +36,210 @@ enum ReplicaMetrics {
   static let thinStroke: CGFloat = 1
 }
 
+@MainActor
 enum ReplicaMotion {
+  /// The reference timings were authored around a 30/60 Hz capture. A slightly
+  /// tighter cadence feels more immediate on-device while ProMotion supplies
+  /// the additional in-between frames instead of making the motion look sped up.
+  private static let polishCadence = 0.82
+
+  static func duration(_ base: Double, speedPercent: Double) -> Double {
+    guard speedPercent > 0 else { return 0 }
+    return base * durationScale(speedPercent: speedPercent)
+  }
+
+  static func durationScale(speedPercent: Double) -> Double {
+    guard speedPercent > 0 else { return 0.01 }
+    return polishCadence * 100 / min(200, max(5, speedPercent))
+  }
+
   static func standard(speedPercent: Double) -> Animation? {
     guard speedPercent > 0, !UIAccessibility.isReduceMotionEnabled else { return nil }
-    return .easeInOut(duration: 0.24 * 100 / speedPercent)
+    return .smooth(duration: duration(0.24, speedPercent: speedPercent))
   }
 
   static func spring(speedPercent: Double) -> Animation? {
     guard speedPercent > 0, !UIAccessibility.isReduceMotionEnabled else { return nil }
-    return .spring(response: 0.32 * 100 / speedPercent, dampingFraction: 0.76)
+    return .spring(
+      response: duration(0.32, speedPercent: speedPercent),
+      dampingFraction: 0.82,
+      blendDuration: duration(0.08, speedPercent: speedPercent)
+    )
   }
 
   static func dialogPresent(speedPercent: Double) -> Animation? {
     guard speedPercent > 0, !UIAccessibility.isReduceMotionEnabled else { return nil }
-    return .easeOut(duration: 0.22 * 100 / speedPercent)
+    return .smooth(duration: duration(0.22, speedPercent: speedPercent))
   }
 
   static func dialogDismiss(speedPercent: Double) -> Animation? {
     guard speedPercent > 0, !UIAccessibility.isReduceMotionEnabled else { return nil }
-    return .easeIn(duration: 0.18 * 100 / speedPercent)
+    return .easeIn(duration: duration(0.18, speedPercent: speedPercent))
   }
 
   static var pressFeedback: Animation? {
-    UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.12)
+    UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.09)
   }
 }
 
-/// Restrained glass used for interactive chrome. The board intentionally does
-/// not use this treatment so clues and connected covered regions stay crisp.
-struct GlassCapsuleSurface: View {
+/// Fallback chrome for iOS 17–25. Native Liquid Glass is applied directly to
+/// interactive controls below when the iOS 26 API is available.
+struct SemiMatteCapsuleSurface: View {
   let theme: AppTheme
   var emphasized = false
 
   var body: some View {
     Capsule(style: .continuous)
-      // Material remains the base in every theme. AMOLED previously replaced
-      // it with an opaque black fill, which made those controls read as ash
-      // gray paint instead of glass.
-      .fill(.ultraThinMaterial)
+      .fill(semiMatteFill(theme: theme, emphasized: emphasized))
       .overlay {
         Capsule(style: .continuous)
-          .fill(
-            theme.isAMOLED
-              ? Color.black.opacity(0.38)
-              : theme.usesLightBackground
-                ? Color.white.opacity(0.40) : Color.white.opacity(0.035)
-          )
+          .stroke(semiMatteStroke(theme: theme, emphasized: emphasized), lineWidth: 1)
       }
-      .overlay {
-        Capsule(style: .continuous)
-          .fill(
-            LinearGradient(
-              colors: [
-                Color.white.opacity(
-                  theme.isAMOLED ? 0.10 : theme.usesLightBackground ? 0.40 : 0.28),
-                theme.accent.opacity(theme.isAMOLED ? (emphasized ? 0.13 : 0.07) : (emphasized ? 0.15 : 0.06)),
-                theme.surface.opacity(
-                  theme.isAMOLED ? 0.16 : theme.usesLightBackground ? 0.05 : 0.14),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            )
-          )
-      }
-      .overlay {
-        Capsule(style: .continuous)
-          .stroke(
-            LinearGradient(
-              colors: [
-                Color.white.opacity(theme.isAMOLED ? 0.28 : 0.72),
-                theme.accent.opacity(theme.isAMOLED ? 0.24 : 0.30),
-                theme.separator.opacity(0.20),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            ),
-            lineWidth: 1
-          )
-      }
-      .shadow(color: theme.accent.opacity(emphasized ? 0.11 : 0.025), radius: 7, y: 3)
-      .shadow(color: Color.black.opacity(theme.isAMOLED ? 0.24 : 0.045), radius: 5, y: 2)
+      .shadow(color: Color.black.opacity(theme.usesLightBackground ? 0.05 : 0.18), radius: 3, y: 2)
   }
 }
 
-struct GlassRoundedSurface: View {
+struct SemiMatteRoundedSurface: View {
   let theme: AppTheme
   var cornerRadius: CGFloat = 18
   var emphasized = false
 
   var body: some View {
     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-      .fill(.ultraThinMaterial)
+      .fill(semiMatteFill(theme: theme, emphasized: emphasized))
       .overlay {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-          .fill(
-            theme.isAMOLED
-              ? Color.black.opacity(0.38)
-              : theme.usesLightBackground
-                ? Color.white.opacity(0.40) : Color.white.opacity(0.035)
-          )
+          .stroke(semiMatteStroke(theme: theme, emphasized: emphasized), lineWidth: 1)
       }
-      .overlay {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-          .fill(
-            LinearGradient(
-              colors: [
-                Color.white.opacity(
-                  theme.isAMOLED ? 0.10 : theme.usesLightBackground ? 0.40 : 0.30),
-                theme.accent.opacity(theme.isAMOLED ? (emphasized ? 0.13 : 0.07) : (emphasized ? 0.13 : 0.05)),
-                theme.surface.opacity(
-                  theme.isAMOLED ? 0.16 : theme.usesLightBackground ? 0.06 : 0.20),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            )
-          )
-      }
-      .overlay {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-          .stroke(
-            LinearGradient(
-              colors: [
-                Color.white.opacity(theme.isAMOLED ? 0.28 : 0.76),
-                theme.accent.opacity(theme.isAMOLED ? 0.23 : 0.28),
-                theme.separator.opacity(0.18),
-              ],
-              startPoint: .topLeading,
-              endPoint: .bottomTrailing
-            ),
-            lineWidth: 1
-          )
-      }
-      .shadow(color: theme.accent.opacity(emphasized ? 0.10 : 0.025), radius: 10, y: 5)
-      .shadow(color: Color.black.opacity(theme.isAMOLED ? 0.28 : 0.07), radius: 8, y: 4)
+      .shadow(color: Color.black.opacity(theme.usesLightBackground ? 0.05 : 0.18), radius: 3, y: 2)
   }
 }
 
-struct GlassCircleSurface: View {
+struct SemiMatteCircleSurface: View {
   let theme: AppTheme
   var emphasized = false
 
   var body: some View {
     Circle()
-      .fill(.ultraThinMaterial)
-      .overlay {
-        Circle().fill(
-          theme.isAMOLED
-            ? Color.black.opacity(0.38)
-            : theme.usesLightBackground
-              ? Color.white.opacity(0.40) : Color.white.opacity(0.035)
-        )
-      }
-      .overlay {
-        Circle().fill(
-          LinearGradient(
-            colors: [
-              Color.white.opacity(
-                theme.isAMOLED ? 0.11 : theme.usesLightBackground ? 0.40 : 0.30),
-              theme.accent.opacity(emphasized ? 0.15 : 0.07),
-              theme.surface.opacity(
-                theme.isAMOLED ? 0.16 : theme.usesLightBackground ? 0.05 : 0.14),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-          )
-        )
-      }
+      .fill(semiMatteFill(theme: theme, emphasized: emphasized))
       .overlay {
         Circle().stroke(
-          LinearGradient(
-            colors: [
-              Color.white.opacity(theme.isAMOLED ? 0.30 : 0.74),
-              theme.accent.opacity(theme.isAMOLED ? 0.24 : 0.30),
-              theme.separator.opacity(0.18),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-          ),
+          semiMatteStroke(theme: theme, emphasized: emphasized),
           lineWidth: 1
         )
       }
-      .shadow(color: theme.accent.opacity(emphasized ? 0.11 : 0.035), radius: 7, y: 3)
-      .shadow(color: Color.black.opacity(theme.isAMOLED ? 0.26 : 0.06), radius: 5, y: 2)
+      .shadow(color: Color.black.opacity(theme.usesLightBackground ? 0.05 : 0.18), radius: 3, y: 2)
+  }
+}
+
+private func semiMatteFill(theme: AppTheme, emphasized: Bool) -> Color {
+  if emphasized { return theme.accent.opacity(theme.usesLightBackground ? 0.18 : 0.22) }
+  return theme.usesLightBackground ? Color.black.opacity(0.075) : Color.white.opacity(0.10)
+}
+
+private func semiMatteStroke(theme: AppTheme, emphasized: Bool) -> Color {
+  emphasized
+    ? theme.accent.opacity(0.34)
+    : theme.foreground.opacity(theme.usesLightBackground ? 0.13 : 0.16)
+}
+
+extension View {
+  /// Apple applies glass after a control's size and appearance modifiers. This
+  /// keeps the effect attached to the interactive content itself rather than
+  /// to an empty background view that can disappear over a flat theme.
+  @ViewBuilder
+  func adaptiveGlassCapsule(
+    theme: AppTheme,
+    emphasized: Bool = false,
+    enabled: Bool = true,
+    isInteractive: Bool = true
+  ) -> some View {
+    if enabled {
+      if #available(iOS 26.0, *) {
+        if emphasized {
+          if isInteractive {
+            glassEffect(
+              .regular.tint(theme.accent.opacity(0.20)).interactive(),
+              in: Capsule(style: .continuous)
+            )
+          } else {
+            glassEffect(
+              .regular.tint(theme.accent.opacity(0.20)),
+              in: Capsule(style: .continuous)
+            )
+          }
+        } else {
+          let tint = theme.foreground.opacity(theme.usesLightBackground ? 0.065 : 0.10)
+          if isInteractive {
+            glassEffect(
+              .regular.tint(tint).interactive(),
+              in: Capsule(style: .continuous)
+            )
+          } else {
+            glassEffect(
+              .regular.tint(tint),
+              in: Capsule(style: .continuous)
+            )
+          }
+        }
+      } else {
+        background(SemiMatteCapsuleSurface(theme: theme, emphasized: emphasized))
+      }
+    } else {
+      self
+    }
+  }
+
+  @ViewBuilder
+  func adaptiveGlassRounded(
+    theme: AppTheme,
+    cornerRadius: CGFloat,
+    emphasized: Bool = false
+  ) -> some View {
+    if #available(iOS 26.0, *) {
+      if emphasized {
+        glassEffect(
+          .regular.tint(theme.accent.opacity(0.20)).interactive(),
+          in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+      } else {
+        glassEffect(
+          .regular.tint(
+            theme.foreground.opacity(theme.usesLightBackground ? 0.065 : 0.10)
+          ).interactive(),
+          in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        )
+      }
+    } else {
+      background(
+        SemiMatteRoundedSurface(
+          theme: theme,
+          cornerRadius: cornerRadius,
+          emphasized: emphasized
+        )
+      )
+    }
+  }
+
+  @ViewBuilder
+  func adaptiveGlassCircle(theme: AppTheme, emphasized: Bool = false) -> some View {
+    if #available(iOS 26.0, *) {
+      if emphasized {
+        glassEffect(
+          .regular.tint(theme.accent.opacity(0.20)).interactive(),
+          in: Circle()
+        )
+      } else {
+        glassEffect(
+          .regular.tint(
+            theme.foreground.opacity(theme.usesLightBackground ? 0.065 : 0.10)
+          ).interactive(),
+          in: Circle()
+        )
+      }
+    } else {
+      background(SemiMatteCircleSurface(theme: theme, emphasized: emphasized))
+    }
   }
 }
 
@@ -228,22 +250,20 @@ struct CleanButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.rubik(15, weight: .medium))
-      .foregroundStyle(filled ? theme.background : theme.foreground)
+      .foregroundStyle(theme.foreground)
       .frame(maxWidth: .infinity, minHeight: 42)
       .padding(.horizontal, 18)
       .background {
-        GlassRoundedSurface(
-          theme: theme,
-          cornerRadius: 21,
-          emphasized: filled || configuration.isPressed
-        )
-        .overlay {
-          RoundedRectangle(cornerRadius: 21, style: .continuous)
-            .fill(filled ? theme.foreground.opacity(0.62) : Color.clear)
-        }
+        RoundedRectangle(cornerRadius: 21, style: .continuous)
+          .fill(theme.accent.opacity(filled ? 0.14 : 0.055))
       }
+      .adaptiveGlassRounded(
+        theme: theme,
+        cornerRadius: 21,
+        emphasized: filled || configuration.isPressed
+      )
       .scaleEffect(configuration.isPressed ? 0.975 : 1)
-      .opacity(configuration.isPressed ? 0.82 : 1)
+      .opacity(configuration.isPressed ? 0.92 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
   }
 }
@@ -255,21 +275,19 @@ struct AndroidPillButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.rubik(14, weight: .regular))
-      .foregroundStyle(filled ? theme.background : theme.foreground.opacity(0.78))
+      .foregroundStyle(theme.foreground.opacity(filled ? 0.94 : 0.82))
       .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
       .padding(.horizontal, 20)
       .background {
-        GlassCapsuleSurface(
-          theme: theme,
-          emphasized: filled || configuration.isPressed
-        )
-        .overlay {
-          Capsule(style: .continuous)
-            .fill(filled ? theme.foreground.opacity(0.62) : Color.clear)
-        }
+        Capsule(style: .continuous)
+          .fill(theme.accent.opacity(filled ? 0.14 : 0.055))
       }
+      .adaptiveGlassCapsule(
+        theme: theme,
+        emphasized: filled || configuration.isPressed
+      )
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
-      .opacity(configuration.isPressed ? 0.62 : 1)
+      .opacity(configuration.isPressed ? 0.92 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
   }
 }
@@ -282,14 +300,12 @@ struct RoundIconButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.rubik(size * 0.4, weight: .regular))
-      .foregroundStyle(filled ? theme.background : theme.foreground.opacity(0.76))
+      .foregroundStyle(theme.foreground.opacity(filled ? 0.94 : 0.82))
       .frame(width: size, height: size)
       .background {
-        GlassCircleSurface(theme: theme, emphasized: filled || configuration.isPressed)
-          .overlay {
-            Circle().fill(filled ? theme.foreground.opacity(0.46) : Color.clear)
-          }
+        Circle().fill(theme.accent.opacity(filled ? 0.14 : 0.055))
       }
+      .adaptiveGlassCircle(theme: theme, emphasized: filled || configuration.isPressed)
       .scaleEffect(configuration.isPressed ? 0.9 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
   }
@@ -305,14 +321,12 @@ struct GlassDestructivePillButtonStyle: ButtonStyle {
       .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
       .padding(.horizontal, 20)
       .background {
-        GlassCapsuleSurface(theme: theme, emphasized: configuration.isPressed)
-          .overlay {
-            Capsule(style: .continuous)
-              .fill(theme.mine.opacity(configuration.isPressed ? 0.18 : 0.08))
-          }
+        Capsule(style: .continuous)
+          .fill(theme.mine.opacity(configuration.isPressed ? 0.18 : 0.08))
       }
+      .adaptiveGlassCapsule(theme: theme, emphasized: configuration.isPressed)
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
-      .opacity(configuration.isPressed ? 0.72 : 1)
+      .opacity(configuration.isPressed ? 0.92 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
   }
 }

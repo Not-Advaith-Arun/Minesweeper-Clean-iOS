@@ -58,7 +58,7 @@ private struct ThemeCard: View {
     .padding(.horizontal, 14)
     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
     .background {
-      GlassRoundedSurface(theme: store.theme, cornerRadius: 7, emphasized: selected)
+      SemiMatteRoundedSurface(theme: store.theme, cornerRadius: 7, emphasized: selected)
         .overlay {
           RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(theme.background.opacity(store.theme.isAMOLED ? 0.54 : 0.66))

@@ -18,6 +18,16 @@ struct SettingsView: View {
             identifier: "settings.cellBorders"
           )
 
+          SettingsSlider(
+            title: "Animation speed",
+            value: binding(\.animationSpeed),
+            range: 0...200,
+            step: 5,
+            formatted: { $0 == 0 ? "Off" : "\(Int($0))%" },
+            identifier: "settings.animationSpeed"
+          )
+          .padding(.top, 42)
+
           SettingsToggle(
             title: "Show action toggle",
             detail: store.settings.longPressEnabled
@@ -66,15 +76,6 @@ struct SettingsView: View {
           )
           .padding(.top, 42)
 
-          SettingsSlider(
-            title: "Animation speed",
-            value: binding(\.animationSpeed),
-            range: 0...150,
-            step: 5,
-            formatted: { "\(Int($0))%" }
-          )
-          .padding(.top, 42)
-
           SettingsToggle(
             title: "Vibration",
             detail: "Haptic feedback for game actions",
@@ -101,6 +102,8 @@ struct SettingsView: View {
           .padding(.horizontal, 30)
           .padding(.top, 22)
           .padding(.bottom, 42)
+          .frame(maxWidth: 620)
+          .frame(maxWidth: .infinity)
         }
     }
     .background(ReplicaBackground(theme: theme))
@@ -166,19 +169,17 @@ private struct SettingsPicker: View {
               )
               .frame(maxWidth: .infinity, minHeight: 38)
               .background {
-                GlassCapsuleSurface(
-                  theme: store.theme,
-                  emphasized: selection == action
-                )
-                .overlay {
-                  Capsule(style: .continuous)
-                    .fill(
-                      selection == action
-                        ? store.theme.covered.opacity(0.78)
-                        : store.theme.accent.opacity(0.025)
-                    )
-                }
+                Capsule(style: .continuous)
+                  .fill(
+                    selection == action
+                      ? store.theme.covered.opacity(0.32)
+                      : store.theme.accent.opacity(0.025)
+                  )
               }
+              .adaptiveGlassCapsule(
+                theme: store.theme,
+                emphasized: selection == action
+              )
           }
           .buttonStyle(.plain)
         }
@@ -195,6 +196,7 @@ private struct SettingsSlider: View {
   let range: ClosedRange<Double>
   let step: Double
   let formatted: (Double) -> String
+  var identifier: String? = nil
   var disabled = false
 
   var body: some View {
@@ -208,6 +210,7 @@ private struct SettingsSlider: View {
       }
       Slider(value: $value, in: range, step: step)
         .tint(store.theme.accent)
+        .accessibilityIdentifier(identifier ?? "settings.slider.\(title)")
     }
     .foregroundStyle(store.theme.foreground.opacity(0.84))
     .disabled(disabled)

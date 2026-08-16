@@ -11,7 +11,9 @@ struct HomeView: View {
       ReplicaBackground(theme: theme)
       GeometryReader { geometry in
         let width = geometry.size.width
-        let height = UIScreen.main.bounds.height
+        // Use the active window, not the physical display. This keeps the
+        // composition centered in iPad Split View and Stage Manager.
+        let height = geometry.size.height
 
         Button {
           store.navigation.append(.themes)
@@ -37,7 +39,7 @@ struct HomeView: View {
 
         VStack(spacing: 18) {
           Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
-            .buttonStyle(AndroidPillButtonStyle(theme: theme))
+            .buttonStyle(AndroidPillButtonStyle(theme: theme, filled: true))
             .disabled(!store.persistenceReady)
             .opacity(store.persistenceReady ? 1 : 0.62)
             .accessibilityIdentifier("home.newGame")
@@ -62,7 +64,7 @@ struct HomeView: View {
         .position(x: width / 2, y: height * (store.savedGames[store.selectedDifficulty] == nil ? 0.500 : 0.530))
 
         HomeActionBar()
-          .frame(width: min(286, width - 76))
+          .frame(width: min(160, width - 110))
           .position(x: width / 2, y: height * 0.690)
       }
       .ignoresSafeArea()
@@ -89,10 +91,12 @@ private struct DifficultyCarousel: View {
         move(-1)
       } label: {
         Image(systemName: "chevron.left")
+          .font(.system(size: 31, weight: .light))
+          .foregroundStyle(theme.foreground.opacity(0.54))
       }
       .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
-      .opacity(0)
-      .accessibilityHidden(true)
+      .accessibilityLabel("Previous difficulty")
+      .accessibilityIdentifier("home.previousDifficulty")
 
       TabView(selection: $selection) {
         ForEach(ReplicaDifficulty.allCases) { difficulty in
@@ -139,11 +143,7 @@ private struct HomeActionBar: View {
     HStack {
       homeAction(asset: "FooterSettings", label: "Settings") { store.navigation.append(.settings) }
       Spacer()
-      homeAction(asset: "FooterCart", label: "Themes") { store.navigation.append(.themes) }
-      Spacer()
       homeAction(asset: "FooterList", label: "Times") { store.navigation.append(.times) }
-      Spacer()
-      homeAction(asset: "FooterInfo", label: "About") { store.showAbout = true }
     }
   }
 
@@ -204,11 +204,11 @@ struct QuickThemeBar: View {
     .frame(height: 48)
     .padding(.leading, isExpanded ? 5 : 0)
     .padding(.trailing, 3)
-    .background {
-      if isExpanded {
-        GlassCapsuleSurface(theme: store.theme, emphasized: true)
-      }
-    }
+    .adaptiveGlassCapsule(
+      theme: store.theme,
+      emphasized: true,
+      enabled: isExpanded
+    )
   }
 }
 

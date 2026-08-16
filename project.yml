@@ -44,6 +44,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.puzzle-games
+        CADisableMinimumFrameDurationOnPhone: true
         UIApplicationSupportsIndirectInputEvents: true
         UIAppFonts:
           - Rubik-Black.ttf
@@ -65,9 +66,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.xylo.MinesweeperCleanReplica
         PRODUCT_NAME: Minesweeper
         CURRENT_PROJECT_VERSION: 1
-        MARKETING_VERSION: 1.21.3
+        MARKETING_VERSION: 1.22.2
         GENERATE_INFOPLIST_FILE: false
-        TARGETED_DEVICE_FAMILY: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         DEVELOPMENT_ASSET_PATHS: ""
     scheme:

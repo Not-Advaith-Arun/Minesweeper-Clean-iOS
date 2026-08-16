@@ -10,6 +10,81 @@ struct PersistenceOverview: Sendable {
   let records: [ReplicaTimeRecord]
 }
 
+/// Keeps one solver-verified Extreme board ready away from the main actor.
+///
+/// Extreme deliberately has a fixed first reveal, so its expensive no-guess
+/// verification can happen before the player enters the board. The actor
+/// serializes consumption while the detached task does the CPU-heavy work.
+/// Once consumed, it deliberately stays idle so generation cannot compete
+/// with reveal and camera animation. A later restart schedules its own fresh,
+/// independently seeded board while the ready screen remains responsive.
+actor ExtremeReadyBoardPool {
+  static let shared = ExtremeReadyBoardPool()
+  static let fixedStart = CellCoordinate(row: 16, column: 9)
+
+  private struct PendingBoard: Sendable {
+    let identifier: UInt64
+    let task: Task<PreparedBoard, Error>
+  }
+
+  private var pendingBoard: PendingBoard?
+  private var nextIdentifier: UInt64 = 0
+
+  /// Starts the app-launch warmup without waiting for generation to finish.
+  func warm() {
+    scheduleGenerationIfNeeded()
+  }
+
+  func consume() async throws -> PreparedBoard {
+    scheduleGenerationIfNeeded()
+    guard let pendingBoard else {
+      throw BoardGenerationError.unableToGenerateNoGuessBoard(attempts: 0)
+    }
+
+    do {
+      let prepared = try await pendingBoard.task.value
+      // Actor methods are re-entrant while awaiting. If another session
+      // consumed this task first, wait for its freshly scheduled successor.
+      guard self.pendingBoard?.identifier == pendingBoard.identifier else {
+        return try await consume()
+      }
+      self.pendingBoard = nil
+      return prepared
+    } catch {
+      if self.pendingBoard?.identifier == pendingBoard.identifier {
+        self.pendingBoard = nil
+        scheduleGenerationIfNeeded()
+      }
+      throw error
+    }
+  }
+
+  private func scheduleGenerationIfNeeded() {
+    guard pendingBoard == nil else { return }
+    nextIdentifier &+= 1
+    let identifier = nextIdentifier
+    let seed = UInt64.random(in: .min ... .max)
+    let firstReveal = Self.fixedStart
+    let configuration = Difficulty.extreme.configuration
+    let generator = HardNoGuessBoardGenerator(
+      maximumAttempts: 2_048,
+      randomAttemptsBeforeFallback: 1_920
+    )
+    // The player is waiting behind this: Extreme shows a preparation screen until the board
+    // arrives. Background QoS gets starved whenever anything else is running and stretched
+    // that wait into tens of seconds, so ask for the same priority as a direct interaction.
+    let task = Task.detached(priority: .userInitiated) {
+      let board = try generator.generate(
+        configuration: configuration,
+        firstReveal: firstReveal,
+        seed: seed
+      )
+      return PreparedBoard(board: board, firstReveal: firstReveal)
+    }
+    pendingBoard = PendingBoard(identifier: identifier, task: task)
+  }
+}
+
 @MainActor
 final class GamePersistenceBridge {
   static let shared = GamePersistenceBridge()
@@ -95,6 +170,7 @@ final class GameSessionController {
   private(set) var isReplaying = false
   private(set) var isReplayCovering = false
   private(set) var replayCoverSequence = 0
+  private(set) var isExtremeStartEnabled = false
 
   let difficulty: ReplicaDifficulty
   private var engine: GameEngine
@@ -104,6 +180,11 @@ final class GameSessionController {
   private var completedReplayBoard: BoardPresentation?
   private var replayTask: Task<Void, Never>?
   private var replayGeneration = 0
+  private var extremePreparationTask: Task<Void, Never>?
+  private var extremePreparationGeneration = 0
+  private var hasQueuedExtremeOpening = false
+  private var hasAppeared = false
+  private var deferredExtremePreparationFlags: Set<CellCoordinate>?
 
   init(difficulty: ReplicaDifficulty, resume: Bool, settings: UserSettings) {
     self.difficulty = difficulty
@@ -117,8 +198,10 @@ final class GameSessionController {
     self.board = BoardPresentation(columns: difficulty.size.columns, rows: difficulty.size.rows)
     self.remainingMineCount = difficulty.size.mines
     self.actionMode = settings.primaryAction
+    var isPreviewSession = false
 #if DEBUG
     if let preview = Self.previewEngine(for: difficulty) {
+      isPreviewSession = true
       self.engine = preview.engine
       self.explodedMine = preview.explodedMine
       if preview.engine.phase == .won {
@@ -137,7 +220,26 @@ final class GameSessionController {
     if resume {
       isLoading = true
       Task { [weak self] in await self?.restore() }
+    } else if difficulty == .extreme, !isPreviewSession {
+      beginExtremePreparation()
     }
+  }
+
+  var fixedStartCoordinate: CellCoordinate? {
+    difficulty == .extreme && phase == .ready ? ExtremeReadyBoardPool.fixedStart : nil
+  }
+
+  /// SwiftUI evaluates the `State(initialValue:)` expression on every render of `GameView`, so a
+  /// session controller is built and thrown away many times per game. Extreme preparation must
+  /// wait for the instance that is actually on screen: otherwise each discarded controller takes
+  /// the verified board the live session is waiting for, and the generator keeps running for the
+  /// whole game while the ready canvas never leaves its preparing state.
+  func viewDidAppear() {
+    guard !hasAppeared else { return }
+    hasAppeared = true
+    guard let flags = deferredExtremePreparationFlags else { return }
+    deferredExtremePreparationFlags = nil
+    beginExtremePreparation(restoringFlags: flags)
   }
 
   var elapsedSeconds: Int { Int(engine.elapsedTime(at: .now).rounded(.down)) }
@@ -179,6 +281,9 @@ final class GameSessionController {
 
   func restart() {
     stopWinReplay(restoreCompletedBoard: false)
+    extremePreparationGeneration += 1
+    extremePreparationTask?.cancel()
+    extremePreparationTask = nil
     engine = GameEngine(
       difficulty: difficulty.coreValue,
       actionMode: settings.primaryAction == .dig ? .dig : .flag,
@@ -190,9 +295,12 @@ final class GameSessionController {
     lastChangedCoordinates = []
     lastActionCoordinate = nil
     isLoading = false
+    isExtremeStartEnabled = false
+    hasQueuedExtremeOpening = false
     refreshPresentation()
     completedReplayBoard = nil
     resetReplayHistory(includeCurrentBoard: false)
+    if difficulty == .extreme { beginExtremePreparation() }
   }
 
   /// Replays the exact board states produced by the player's successful game.
@@ -232,7 +340,7 @@ final class GameSessionController {
     // so their replay still reads as a miniature game rather than a flash.
     let historyDuration = min(10.4, max(2.2, Double(actionCount) * 0.034))
     let stepDuration = historyDuration / Double(actionCount)
-    let speedScale = 100 / min(150, max(5, animationSpeed))
+    let speedScale = ReplicaMotion.durationScale(speedPercent: animationSpeed)
     let openingHold = 0.42 * speedScale
     let finalHold = 0.42 * speedScale
     let wipeDuration = 0.92 * speedScale
@@ -320,19 +428,39 @@ final class GameSessionController {
     engine = revised
   }
 
-  func dismissError() { errorMessage = nil }
+  func dismissError() {
+    errorMessage = nil
+    if difficulty == .extreme, phase == .ready, !isExtremeStartEnabled, !isLoading {
+      beginExtremePreparation()
+    }
+  }
 
   private func restore() async {
-    defer { isLoading = false }
     guard let snapshot = await GamePersistenceBridge.shared.loadGame(for: difficulty) else {
       refreshPresentation()
+      if difficulty == .extreme {
+        beginExtremePreparation()
+      } else {
+        isLoading = false
+      }
       return
     }
     do {
-      engine = try GameEngine(snapshot: snapshot)
+      engine = try GameEngine(snapshot: snapshot, generator: Self.generator(for: difficulty))
       actionMode = engine.actionMode == .dig ? .dig : .flag
       refreshPresentation()
       resetReplayHistory(includeCurrentBoard: phase != .ready)
+      if difficulty == .extreme, phase == .ready {
+        let flaggedCoordinates: Set<CellCoordinate> = Set(
+          engine.cells.indices.compactMap { index in
+            guard engine.cells[index].isFlagged else { return nil }
+            return engine.configuration.coordinate(for: index)
+          }
+        )
+        beginExtremePreparation(restoringFlags: flaggedCoordinates)
+        return
+      }
+      isLoading = false
       resumeTimerIfNeeded()
     } catch {
       errorMessage = "The saved game could not be restored. A fresh board was created."
@@ -342,13 +470,33 @@ final class GameSessionController {
   }
 
   private func perform(primary: Bool, column: Int, row: Int) {
-    guard !isLoading, !phase.isFinished else { return }
+    guard !phase.isFinished else { return }
+    let coordinate = CellCoordinate(row: row, column: column)
+    let isFixedExtremeOpening = difficulty == .extreme && phase == .ready
+    if isFixedExtremeOpening {
+      guard coordinate == ExtremeReadyBoardPool.fixedStart else { return }
+      guard isExtremeStartEnabled else {
+        // Remember an early press on the one valid opening while generation
+        // finishes. The GameEngine is still initialized before the reveal is
+        // applied; this simply avoids making the player tap the target twice.
+        if isLoading {
+          hasQueuedExtremeOpening = true
+          lastActionCoordinate = coordinate
+        }
+        return
+      }
+    }
+    guard !isLoading else { return }
     isLoading = true
     let requestedAction =
-      primary
+      isFixedExtremeOpening
+      ? PrimaryAction.dig
+      : primary
       ? actionMode
       : (actionMode == .dig ? PrimaryAction.flag : PrimaryAction.dig)
-    let coordinate = CellCoordinate(row: row, column: column)
+    // Publish the touch immediately so Extreme can show responsive visual
+    // feedback while the already-verified opening is applied off-main.
+    lastActionCoordinate = coordinate
     let currentEngine = engine
     let coreSettings = settings.coreValue
 
@@ -356,10 +504,18 @@ final class GameSessionController {
       let outcome = await Task.detached(priority: .userInitiated) {
         var revised = currentEngine
         do {
-          let result =
-            try primary
-            ? revised.performPrimaryAction(at: coordinate, settings: coreSettings)
-            : revised.performSecondaryAction(at: coordinate, settings: coreSettings)
+          let result: GameActionResult
+          if isFixedExtremeOpening {
+            // The fixed cell is an opening affordance, not a flaggable cell.
+            // This remains true when Flag is the user's default action or the
+            // opening arrives through the secondary/long-press gesture.
+            result = try revised.perform(.dig, at: coordinate, settings: coreSettings)
+          } else {
+            result =
+              try primary
+              ? revised.performPrimaryAction(at: coordinate, settings: coreSettings)
+              : revised.performSecondaryAction(at: coordinate, settings: coreSettings)
+          }
           return CoreActionOutcome(engine: revised, result: result, errorDescription: nil)
         } catch {
           return CoreActionOutcome(
@@ -398,6 +554,71 @@ final class GameSessionController {
           changedCoordinates: visuallyChanged,
           actionCoordinate: coordinate
         )
+      }
+    }
+  }
+
+  private func beginExtremePreparation(
+    restoringFlags: Set<CellCoordinate> = []
+  ) {
+    guard difficulty == .extreme else { return }
+    isLoading = true
+    isExtremeStartEnabled = false
+    lastActionCoordinate = nil
+    // Hold off until this controller is the one on screen; see viewDidAppear().
+    guard hasAppeared else {
+      deferredExtremePreparationFlags = restoringFlags
+      return
+    }
+    extremePreparationGeneration += 1
+    let generation = extremePreparationGeneration
+    extremePreparationTask?.cancel()
+
+    extremePreparationTask = Task { [weak self] in
+      do {
+        let prepared = try await ExtremeReadyBoardPool.shared.consume()
+        guard let self,
+          !Task.isCancelled,
+          self.extremePreparationGeneration == generation
+        else { return }
+
+        var revised = GameEngine(
+          board: prepared.board,
+          difficulty: .extreme,
+          actionMode: self.actionMode == .dig ? .dig : .flag,
+          generator: Self.generator(for: .extreme)
+        )
+        // A legacy ready snapshot can contain pre-opening flags. Preserve
+        // those on resume, except for the now-reserved opening coordinate.
+        for coordinate in restoringFlags where coordinate != prepared.firstReveal {
+          _ = try? revised.toggleFlag(at: coordinate)
+        }
+        self.engine = revised
+        self.explodedMine = nil
+        self.lastChangedCoordinates = []
+        self.lastActionCoordinate = nil
+        self.refreshPresentation()
+        self.resetReplayHistory(includeCurrentBoard: false)
+        self.isLoading = false
+        self.isExtremeStartEnabled = true
+        self.extremePreparationTask = nil
+        if self.hasQueuedExtremeOpening {
+          self.hasQueuedExtremeOpening = false
+          self.perform(
+            primary: true,
+            column: prepared.firstReveal.column,
+            row: prepared.firstReveal.row
+          )
+        }
+      } catch {
+        guard let self,
+          !Task.isCancelled,
+          self.extremePreparationGeneration == generation
+        else { return }
+        self.isLoading = false
+        self.isExtremeStartEnabled = false
+        self.extremePreparationTask = nil
+        self.errorMessage = "A verified Extreme board could not be prepared. Please try again."
       }
     }
   }
