@@ -2,6 +2,14 @@ name: iOS CI and unsigned IPA
 
 on:
   push:
+    # main only: this is a private repo on a macOS runner, and macOS minutes
+    # count 10x against the Free plan's 2,000 included minutes -- 156 macOS
+    # minutes across 10 runs was 1,560 of 2,000 by 2026-08-27.  A branch can
+    # still be checked by hand with workflow_dispatch.
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -164,13 +172,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload test results and build logs
+      - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: Minesweeper-test-results
-          path: |
-            ${{ runner.temp }}/MinesweeperTests.xcresult
-            build/ci/*.log
+          name: Minesweeper-build-logs
+          path: build/ci/*.log
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+
+      - name: Upload the xcresult bundle (only when something failed)
+        # The .xcresult is 83-117 MB per run and was kept 7 days on EVERY run,
+        # which alone filled the Free plan's 0.5 GB of Actions storage in
+        # August 2026.  It is only worth keeping when there is a failure to
+        # read, and then a day is enough to download it.
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Minesweeper-test-results
+          path: ${{ runner.temp }}/MinesweeperTests.xcresult
+          if-no-files-found: warn
+          retention-days: 1
