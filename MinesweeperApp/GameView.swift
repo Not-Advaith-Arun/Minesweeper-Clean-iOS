@@ -138,7 +138,7 @@ struct GameView: View {
         // motion play. The terminal presentation exchanges it for the
         // restart controls only after those animations have settled.
         presentCompletion(current)
-      } else if current == .playing, previous == .ready {
+      } else if current == .playing, previous == .ready, session.lastActionCoordinate != nil {
         let delay = !reduceMotion && store.settings.animationSpeed > 0
           ? ReplicaMotion.duration(
             ReplicaMotion.firstControlsDelay,
@@ -169,8 +169,7 @@ struct GameView: View {
         }
       case .inactive, .background:
         session.stopWinReplay()
-        session.saveIfNeeded()
-        store.registerSavedGame(session.savedSummary)
+        saveSession()
       @unknown default:
         break
       }
@@ -179,8 +178,7 @@ struct GameView: View {
       restartTask?.cancel()
       presentationTask?.cancel()
       session.stopWinReplay()
-      session.saveIfNeeded()
-      store.registerSavedGame(session.savedSummary)
+      saveSession()
     }
     .alert("Unable to continue", isPresented: errorBinding) {
       Button("OK") { session.dismissError() }
@@ -199,9 +197,14 @@ struct GameView: View {
   private func leaveGame() {
     presentationTask?.cancel()
     session.stopWinReplay()
-    session.saveIfNeeded()
-    store.registerSavedGame(session.savedSummary)
+    saveSession()
     dismiss()
+  }
+
+  private func saveSession() {
+    session.saveIfNeeded()
+    guard !session.isRestoring else { return }
+    store.registerSavedGame(session.savedSummary, for: difficulty)
   }
 
   private func startNewGame(_ selected: ReplicaDifficulty) {

@@ -991,4 +991,71 @@ final class MinesweeperUITests: XCTestCase {
       app.buttons["replica.back"].tap()
     }
   }
+
+  func testRemovingLastReadyFlagClearsResume() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launch()
+    app.buttons["home.newGame"].tap()
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 5))
+    let mineCount = app.descendants(matching: .any)["game.mines"]
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(forDuration: 0.5)
+    expectation(for: NSPredicate(format: "label == '9'"), evaluatedWith: mineCount)
+    waitForExpectations(timeout: 3)
+    app.buttons["game.back"].tap()
+    let resume = app.buttons["home.resume"]
+    XCTAssertTrue(resume.waitForExistence(timeout: 5))
+    resume.tap()
+    expectation(for: NSPredicate(format: "label == '9'"), evaluatedWith: mineCount)
+    waitForExpectations(timeout: 5)
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(forDuration: 0.5)
+    expectation(for: NSPredicate(format: "label == '10'"), evaluatedWith: mineCount)
+    waitForExpectations(timeout: 3)
+    app.buttons["game.back"].tap()
+    expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: resume)
+    waitForExpectations(timeout: 3)
+    try capture("edge-last-flag-home")
+    app.buttons["home.newGame"].tap()
+    XCTAssertFalse(app.alerts["Start a new game?"].exists)
+    XCTAssertTrue(board.waitForExistence(timeout: 3))
+    XCTAssertEqual(board.value as? String, "Ready")
+  }
+
+  func testBackgroundDuringRestorePreservesSavedBoardAndPausedTime() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "topology"
+    app.launch()
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 5))
+    let timer = app.staticTexts["game.timer"]
+    let savedSeconds = try XCTUnwrap(Int(timer.label.dropLast()))
+    app.buttons["game.back"].tap()
+    XCTAssertTrue(app.buttons["home.resume"].waitForExistence(timeout: 5))
+    wait(0.5)
+    app.terminate()
+    app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
+    app.launchEnvironment["MINESWEEPER_UI_TEST_RESET"] = "0"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_RESTORE_DELAY"] = "4"
+    app.launch()
+    let resume = app.buttons["home.resume"]
+    XCTAssertTrue(resume.waitForExistence(timeout: 5))
+    resume.tap()
+    XCUIDevice.shared.press(.home)
+    wait(12)
+    app.activate()
+    let playing = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == 'Playing'"), object: board)
+    XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 5), .completed)
+    let resumedSeconds = try XCTUnwrap(Int(timer.label.dropLast()))
+    XCTAssertLessThanOrEqual(
+      resumedSeconds - savedSeconds, 6, "Background time must not count during restoration")
+    XCTAssertEqual(app.descendants(matching: .any)["game.mines"].label, "0")
+    try capture("edge-background-restore-playing")
+    app.buttons["game.back"].tap()
+    XCTAssertTrue(resume.waitForExistence(timeout: 5))
+  }
 }

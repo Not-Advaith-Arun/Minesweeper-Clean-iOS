@@ -188,9 +188,10 @@ final class AppStore {
     }
   }
 
-  func registerSavedGame(_ summary: SavedGameSummary?) {
-    guard let summary else { return }
-    savedGames[summary.difficulty] = summary
+  func registerSavedGame(_ summary: SavedGameSummary?, for difficulty: ReplicaDifficulty) {
+    // A ready board becomes unsaved when its final pre-opening flag is removed.
+    // Clear the in-memory entry as well as the snapshot on disk in that case.
+    savedGames[difficulty] = summary
   }
 
   func clearSavedGame(_ difficulty: ReplicaDifficulty) {

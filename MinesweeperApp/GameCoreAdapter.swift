@@ -161,6 +161,7 @@ final class GameSessionController {
   private(set) var remainingMineCount: Int
   private(set) var actionMode: PrimaryAction
   private(set) var isLoading = false
+  private(set) var isRestoring = false
   private(set) var errorMessage: String?
   private(set) var completionRecord: ReplicaTimeRecord?
   private(set) var feedbackSequence = 0
@@ -221,7 +222,7 @@ final class GameSessionController {
 
     if resume {
       isLoading = true
-      Task { [weak self] in await self?.restore() }
+      isRestoring = true
     } else if difficulty == .extreme, !isPreviewSession {
       beginExtremePreparation()
     }
@@ -239,6 +240,12 @@ final class GameSessionController {
   func viewDidAppear() {
     guard !hasAppeared else { return }
     hasAppeared = true
+    // Like Extreme preparation, disk restoration belongs only to the State
+    // instance actually displayed, not the temporary values SwiftUI constructs.
+    if isRestoring {
+      Task { [weak self] in await self?.restore() }
+      return
+    }
     guard let flags = deferredExtremePreparationFlags else { return }
     deferredExtremePreparationFlags = nil
     beginExtremePreparation(restoringFlags: flags)
@@ -417,6 +424,9 @@ final class GameSessionController {
 
   func saveIfNeeded() {
     isTimerPaused = true
+    // The visible placeholder is not a new empty game. Backgrounding while a
+    // snapshot is loading must not remove the snapshot we are about to resume.
+    guard !isRestoring else { return }
     guard !phase.isFinished else {
       Task { await GamePersistenceBridge.shared.removeGame(for: difficulty) }
       return
@@ -448,6 +458,14 @@ final class GameSessionController {
   }
 
   private func restore() async {
+    defer { isRestoring = false }
+#if DEBUG
+    if let delay = ProcessInfo.processInfo.environment["MINESWEEPER_UI_TEST_RESTORE_DELAY"]
+      .flatMap(Double.init), delay > 0
+    {
+      try? await Task.sleep(for: .seconds(min(delay, 10)))
+    }
+#endif
     guard let snapshot = await GamePersistenceBridge.shared.loadGame(for: difficulty) else {
       refreshPresentation()
       if difficulty == .extreme {
@@ -473,7 +491,9 @@ final class GameSessionController {
         return
       }
       isLoading = false
-      resumeTimerIfNeeded()
+      // A scene may have become inactive while the disk read was pending.
+      // Only the foreground lifecycle callback may reverse that pause.
+      if !isTimerPaused { resumeTimerIfNeeded() }
     } catch {
       errorMessage = "The saved game could not be restored. A fresh board was created."
       await GamePersistenceBridge.shared.removeGame(for: difficulty)
@@ -482,7 +502,7 @@ final class GameSessionController {
   }
 
   private func perform(primary: Bool, column: Int, row: Int) {
-    guard !phase.isFinished else { return }
+    guard !phase.isFinished, !isRestoring else { return }
     let coordinate = CellCoordinate(row: row, column: column)
     let isFixedExtremeOpening = difficulty == .extreme && phase == .ready
     if isFixedExtremeOpening {
