@@ -1058,4 +1058,35 @@ final class MinesweeperUITests: XCTestCase {
     app.buttons["game.back"].tap()
     XCTAssertTrue(resume.waitForExistence(timeout: 5))
   }
+
+  func testSlowRestartKeepsGesturesFromMovingTheReadyBoard() throws {
+    app.terminate()
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "near_loss"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_ANIMATION_SPEED"] = "25"
+    app.launch()
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 5))
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+    let restart = app.buttons["game.startNew"]
+    XCTAssertTrue(restart.waitForExistence(timeout: 10))
+    restart.tap()
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == 'Ready'"), object: board)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 3), .completed)
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.45))
+      .press(forDuration: 0.05,
+             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.65)))
+    board.pinch(withScale: 1.5, velocity: 2)
+    try capture("edge-restart-gesture-attempt")
+    wait(5)
+    XCTAssertEqual(board.value as? String, "Ready")
+    XCTAssertFalse(restart.exists)
+    try capture("edge-restart-gesture-settled")
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    let playing = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == 'Playing' OR value == 'Won'"), object: board)
+    XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 5), .completed)
+  }
+
 }

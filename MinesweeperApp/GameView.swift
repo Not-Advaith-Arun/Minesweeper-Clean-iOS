@@ -12,6 +12,7 @@ struct GameView: View {
   @State private var showEndControls = false
   @State private var showActionToggle = false
   @State private var restartTask: Task<Void, Never>?
+  @State private var pendingRestart: ReplicaDifficulty?
   @State private var presentationTask: Task<Void, Never>?
 
   let difficulty: ReplicaDifficulty
@@ -121,7 +122,11 @@ struct GameView: View {
       }
 #endif
     }
-    .onChange(of: store.settings) { _, revised in session.updateSettings(revised) }
+    .onChange(of: store.settings) { previous, revised in
+      session.updateSettings(revised)
+      if previous.animationSpeed != revised.animationSpeed { reconcileMotionPreference() }
+    }
+    .onChange(of: reduceMotion) { _, _ in reconcileMotionPreference() }
     .onChange(of: session.feedbackSequence) { _, _ in
       store.haptic(session.feedbackAction == .dig ? .reveal : .flag)
     }
@@ -176,6 +181,7 @@ struct GameView: View {
     }
     .onDisappear {
       restartTask?.cancel()
+      pendingRestart = nil
       presentationTask?.cancel()
       session.stopWinReplay()
       saveSession()
@@ -195,6 +201,8 @@ struct GameView: View {
   }
 
   private func leaveGame() {
+    restartTask?.cancel()
+    pendingRestart = nil
     presentationTask?.cancel()
     session.stopWinReplay()
     saveSession()
@@ -209,6 +217,7 @@ struct GameView: View {
 
   private func startNewGame(_ selected: ReplicaDifficulty) {
     restartTask?.cancel()
+    pendingRestart = selected
     presentationTask?.cancel()
     // Preserve the replay's currently visible frame until the restart canvas
     // snapshots it. Restoring the solved board here creates a conspicuous
@@ -227,10 +236,50 @@ struct GameView: View {
     restartTask = Task { @MainActor in
       try? await Task.sleep(for: .seconds(delay))
       guard !Task.isCancelled else { return }
-      if selected == difficulty {
-        session.restart()
-      } else {
-        store.replaceCurrentGame(with: selected)
+      finishRestart(selected)
+    }
+  }
+
+  private func finishRestart(_ selected: ReplicaDifficulty) {
+    restartTask?.cancel()
+    restartTask = nil
+    pendingRestart = nil
+    if selected == difficulty {
+      session.restart()
+    } else {
+      store.replaceCurrentGame(with: selected)
+    }
+  }
+
+  private func reconcileMotionPreference() {
+    guard reduceMotion || store.settings.animationSpeed <= 0 else {
+      if scenePhase == .active, session.phase == .won,
+        showEndControls, !showResult, !session.isReplaying
+      {
+        session.beginWinReplay(animationSpeed: store.settings.animationSpeed)
+      }
+      return
+    }
+
+    // Finish the same state transition the player was waiting for. A motion
+    // preference change must not leave replay updating behind a static canvas
+    // or resurrect the result card during an already-requested restart.
+    session.stopWinReplay()
+    presentationTask?.cancel()
+    if let pendingRestart {
+      finishRestart(pendingRestart)
+      return
+    }
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      if session.phase.isFinished {
+        let needsResult = session.phase == .won && !showEndControls
+        showActionToggle = false
+        showEndControls = true
+        if needsResult { showResult = true }
+      } else if session.phase == .playing {
+        showActionToggle = true
       }
     }
   }

@@ -226,6 +226,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
   private enum CameraAnimationKind {
     case focus
     case restart
+    case terminal
   }
 
   private struct CameraAnimationState {
@@ -272,13 +273,34 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    guard window == nil else { return }
-    focusWorkItem?.cancel()
-    focusWorkItem = nil
-    terminalWorkItem?.cancel()
-    terminalWorkItem = nil
-    pendingTerminalFrameAnimated = nil
-    stopCameraAnimation()
+    guard window == nil else {
+      setNeedsLayout()
+      return
+    }
+    // Finish while offscreen instead of leaving a half-restored camera with
+    // no display link to complete it if this same viewport is attached again.
+    applyPendingFocusIfNeeded()
+    if let focusWorkItem {
+      focusWorkItem.perform()
+      focusWorkItem.cancel()
+      self.focusWorkItem = nil
+    }
+    if let terminalWorkItem {
+      terminalWorkItem.perform()
+      terminalWorkItem.cancel()
+      self.terminalWorkItem = nil
+    }
+    if pendingTerminalFrameAnimated != nil { applyTerminalFrame(animated: false) }
+    if isRestartCameraPending, bounds.width > 0, bounds.height > 0, lastGridSize.width > 0 {
+      let readyScale = min(
+        bounds.height / lastGridSize.height,
+        bounds.width / lastGridSize.width * 0.79
+      )
+      applyPendingRestartCameraIfNeeded(readyScale: readyScale)
+    }
+    settleCameraAnimation()
+    canvas.settleFiniteAnimations()
+    synchronizeGestureAvailability()
   }
 
   func update(
@@ -309,8 +331,10 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     let previousPhase = lastPhase
     if previousPhase != .ready, phase == .ready {
       focusWorkItem?.cancel()
+      focusWorkItem = nil
       stopCameraAnimation()
       terminalWorkItem?.cancel()
+      terminalWorkItem = nil
       pendingTerminalFrameAnimated = nil
       pendingFocusCoordinate = nil
       isHoldingRevealTransform = false
@@ -332,11 +356,17 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       stopCameraAnimation()
       isRestartCameraPending = false
       pendingFocusCoordinate = actionCoordinate
-      isHoldingRevealTransform = true
+      isHoldingRevealTransform = actionCoordinate != nil
+      // Restored playing snapshots have no new touch to focus. Give them the
+      // normal playing camera instead of holding the ready transform forever.
+      if actionCoordinate == nil { hasAppliedInitialZoom = false }
       focusWorkItem?.cancel()
+      focusWorkItem = nil
     }
     if !previousPhase.isFinished, phase.isFinished {
       focusWorkItem?.cancel()
+      focusWorkItem = nil
+      pendingFocusCoordinate = nil
       stopCameraAnimation(kind: .focus)
       isHoldingRevealTransform = false
       terminalWorkItem?.cancel()
@@ -354,6 +384,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     } else if previousPhase.isFinished, !phase.isFinished {
       terminalWorkItem?.cancel()
+      terminalWorkItem = nil
       isTerminalFramed = false
       // The pending restart must begin at the completed board's current
       // scale. Resetting this flag here would snap to readyScale during the
@@ -376,15 +407,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       replayCoverSequence: replayCoverSequence
     )
     if animationSpeed <= 0 || UIAccessibility.isReduceMotionEnabled {
-      if let animation = cameraAnimation {
-        stopCameraAnimation()
-        applyCameraFrame(
-          zoom: animation.targetZoom,
-          offset: animation.targetOffset,
-          inset: animation.targetInset
-        )
-        finishCameraAnimation(kind: animation.kind, targetZoom: animation.targetZoom)
-      }
+      settleCameraAnimation()
       if let focusWorkItem {
         focusWorkItem.perform()
         focusWorkItem.cancel()
@@ -396,6 +419,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
         applyTerminalFrame(animated: false)
       }
     }
+    synchronizeGestureAvailability()
     setNeedsLayout()
   }
 
@@ -438,6 +462,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     if let animated = pendingTerminalFrameAnimated {
       applyTerminalFrame(animated: animated)
     }
+    synchronizeGestureAvailability()
   }
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { canvas }
@@ -446,10 +471,10 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     if cameraAnimation == nil { centerContent() }
   }
 
-  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { cancelPendingFocus() }
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { cancelAutomaticCameraForGesture() }
 
   func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
-    cancelPendingFocus()
+    cancelAutomaticCameraForGesture()
   }
 
   private func centerContent() {
@@ -514,6 +539,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
   }
 
   private func applyPendingFocusIfNeeded() {
+    guard lastPhase == .playing else { return }
     guard let coordinate = pendingFocusCoordinate, bounds.width > 0, bounds.height > 0 else { return }
     pendingFocusCoordinate = nil
     // Begin at the fitted scale, then glide toward roughly eight visible
@@ -532,6 +558,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     let work = DispatchWorkItem { [weak self] in
       guard let self else { return }
       self.focusWorkItem = nil
+      guard self.lastPhase == .playing else { return }
       self.isHoldingRevealTransform = false
       let targetOffset = CGPoint(
         x: center.x * targetZoom - self.bounds.width / 2,
@@ -571,16 +598,22 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     DispatchQueue.main.asyncAfter(deadline: .now() + focusDelay, execute: work)
   }
 
-  private func cancelPendingFocus() {
+  private func cancelAutomaticCameraForGesture() {
+    // Restart owns the ready framing until its slab has settled, just as the
+    // canvas suppresses reveal/flag gestures during that transition.
+    guard !isRestartCameraPending, cameraAnimation?.kind != .restart else { return }
     focusWorkItem?.cancel()
     focusWorkItem = nil
-    let wasAnimatingFocus = cameraAnimation?.kind == .focus
-    stopCameraAnimation(kind: .focus)
+    terminalWorkItem?.cancel()
+    terminalWorkItem = nil
+    pendingTerminalFrameAnimated = nil
+    let wasAnimating = cameraAnimation != nil
+    stopCameraAnimation()
     pendingFocusCoordinate = nil
     if isHoldingRevealTransform {
       isHoldingRevealTransform = false
       centerContent()
-    } else if wasAnimatingFocus {
+    } else if wasAnimating {
       centerContent()
     }
   }
@@ -599,26 +632,16 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       bounds.height * 0.545 / lastGridSize.height
     )
     minimumZoomScale = min(0.65, scale)
-    let changes = {
-      self.setZoomScale(scale, animated: false)
-      self.centerContent()
-      self.contentOffset = CGPoint(x: -self.contentInset.left, y: -self.contentInset.top)
-      self.layoutIfNeeded()
-    }
-    if animated {
-      // At the default 100% setting this resolves to ~0.48 s after the global
-      // polish cadence, matching the reference camera's ~0.80 s final settle.
-      let duration = lastPhase == .lost ? 0.59 : 0.36
-      UIView.animate(
-        withDuration: ReplicaMotion.duration(
-          duration, speedPercent: canvas.animationSpeedPercent),
-        delay: 0,
-        options: [.curveEaseInOut, .beginFromCurrentState],
-        animations: changes
-      )
-    } else {
-      changes()
-    }
+    let targetInset = calculatedContentInset(at: scale)
+    let duration = lastPhase == .lost ? 0.59 : 0.36
+    startCameraAnimation(
+      kind: .terminal,
+      targetZoom: scale,
+      targetOffset: CGPoint(x: -targetInset.left, y: -targetInset.top),
+      targetInset: targetInset,
+      duration: animated
+        ? ReplicaMotion.duration(duration, speedPercent: canvas.animationSpeedPercent) : 0
+    )
   }
 
   private func startCameraAnimation(
@@ -645,6 +668,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       startInset: contentInset,
       targetInset: targetInset
     )
+    synchronizeGestureAvailability()
     let displayLink = CADisplayLink(target: self, selector: #selector(stepCameraAnimation(_:)))
     displayLink.preferredFrameRateRange = CAFrameRateRange(
       minimum: 60,
@@ -663,11 +687,7 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     let linearProgress = CGFloat(
       min(1, max(0, (displayLink.targetTimestamp - animation.startedAt) / animation.duration))
     )
-    // Quintic smootherstep has zero velocity and acceleration at both ends,
-    // avoiding the tiny hitch visible when a scroll view animation hands back
-    // to direct manipulation.
-    let easedProgress = linearProgress * linearProgress * linearProgress
-      * (linearProgress * (linearProgress * 6 - 15) + 10)
+    let easedProgress = cameraProgress(linearProgress, kind: animation.kind)
     func interpolate(_ start: CGFloat, _ end: CGFloat) -> CGFloat {
       start + (end - start) * easedProgress
     }
@@ -699,7 +719,10 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       minimumZoomScale = targetZoom
       maximumZoomScale = max(targetZoom, 3.5)
       hasAppliedInitialZoom = true
+    } else if kind == .terminal, lastPhase.isFinished {
+      hasAppliedInitialZoom = true
     }
+    synchronizeGestureAvailability()
     setNeedsLayout()
   }
 
@@ -708,6 +731,49 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     cameraDisplayLink?.invalidate()
     cameraDisplayLink = nil
     cameraAnimation = nil
+    synchronizeGestureAvailability()
+  }
+
+  private func settleCameraAnimation() {
+    guard let animation = cameraAnimation else { return }
+    stopCameraAnimation()
+    applyCameraFrame(
+      zoom: animation.targetZoom,
+      offset: animation.targetOffset,
+      inset: animation.targetInset
+    )
+    finishCameraAnimation(kind: animation.kind, targetZoom: animation.targetZoom)
+  }
+
+  private func synchronizeGestureAvailability() {
+    let allowsGestures = !isRestartCameraPending && cameraAnimation?.kind != .restart
+    if isScrollEnabled != allowsGestures { isScrollEnabled = allowsGestures }
+    if panGestureRecognizer.isEnabled != allowsGestures {
+      panGestureRecognizer.isEnabled = allowsGestures
+    }
+    if let pinch = pinchGestureRecognizer, pinch.isEnabled != allowsGestures {
+      pinch.isEnabled = allowsGestures
+    }
+  }
+
+  private func cameraProgress(_ progress: CGFloat, kind: CameraAnimationKind) -> CGFloat {
+    guard kind == .terminal, progress > 0, progress < 1 else {
+      // Focus and restart retain their zero-velocity, zero-acceleration ends
+      // for a smooth handoff to direct manipulation.
+      return progress * progress * progress * (progress * (progress * 6 - 15) + 10)
+    }
+    // Preserve the former UIView curveEaseInOut timing while tracking each
+    // terminal frame, so motion-off and direct gestures can finish/cancel it.
+    var lower: CGFloat = 0
+    var upper: CGFloat = 1
+    for _ in 0..<12 {
+      let t = (lower + upper) / 2
+      let inverse = 1 - t
+      let x = 3 * 0.42 * inverse * inverse * t + 3 * 0.58 * inverse * t * t + t * t * t
+      if x < progress { lower = t } else { upper = t }
+    }
+    let t = (lower + upper) / 2
+    return t * t * (3 - 2 * t)
   }
 
   private func boundedOffset(
@@ -815,6 +881,36 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       maintainDisplayLink()
       setNeedsDisplay()
     }
+  }
+
+  fileprivate func settleFiniteAnimations() {
+    revealStartedAt.removeAll(keepingCapacity: true)
+    revealDurations.removeAll(keepingCapacity: true)
+    initialRevealStartedAt = nil
+    initialRevealOrigin = nil
+    initialRevealDuration = 0
+    initialRevealFixedStartCoordinate = nil
+    restartSnapshot = nil
+    restartStartedAt = nil
+    restartDuration = 0
+    palette = targetPalette
+    paletteTransitionFrom = nil
+    paletteTransitionStartedAt = nil
+    winGlyphFadeStartedAt = nil
+    winGlyphOpacity = phase == .won ? 0 : 1
+    if isReplayCovering, replayCoverDuration > 0 {
+      replayCoverStartedAt = CACurrentMediaTime() - replayCoverDuration
+    }
+    cachedPlayingBoardImage = nil
+    previousAnimatingRevealIndices.removeAll(keepingCapacity: true)
+    previousInitialRevealOverlayRect = nil
+    previousLoadingPulseRect = nil
+    wasInvalidatingFullCanvas = false
+    displayLink?.invalidate()
+    displayLink = nil
+    // A preparation pulse may still be needed on return, but finite reveal,
+    // palette and restart transitions must agree with the settled camera.
+    setNeedsDisplay()
   }
 
   func update(
