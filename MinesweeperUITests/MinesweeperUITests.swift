@@ -1079,6 +1079,10 @@ final class MinesweeperUITests: XCTestCase {
     board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
     let restart = app.buttons["game.startNew"]
     XCTAssertTrue(restart.waitForExistence(timeout: 10))
+    // At 25% speed the control exists before its entrance reaches the tap
+    // position. This check targets gestures during the restart itself.
+    wait(1.5)
+    XCTAssertTrue(restart.isHittable)
     restart.tap()
     let ready = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value == 'Ready'"), object: board)
