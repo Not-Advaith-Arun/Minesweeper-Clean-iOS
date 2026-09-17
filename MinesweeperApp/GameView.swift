@@ -6,6 +6,7 @@ struct GameView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var session: GameSessionController
   @State private var paletteExpanded = false
   @State private var showResult = false
@@ -63,12 +64,19 @@ struct GameView: View {
       .accessibilityHidden(showResult)
 
       if session.phase.isFinished, showEndControls, !showResult {
-        GeometryReader { geometry in
-          EndGameControls(
-            currentDifficulty: difficulty,
-            onRestart: startNewGame
-          )
-          .position(x: geometry.size.width / 2, y: geometry.size.height * 0.77)
+        Group {
+          if dynamicTypeSize.isAccessibilitySize {
+            VStack {
+              Spacer(minLength: 0)
+              EndGameControls(currentDifficulty: difficulty, onRestart: startNewGame)
+            }
+            .padding(.bottom, 24)
+          } else {
+            GeometryReader { geometry in
+              EndGameControls(currentDifficulty: difficulty, onRestart: startNewGame)
+                .position(x: geometry.size.width / 2, y: geometry.size.height * 0.77)
+            }
+          }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
       } else if (session.phase == .playing || (session.phase.isFinished && !showEndControls))
@@ -324,6 +332,7 @@ struct GameView: View {
 @MainActor
 private struct GameStatusBar: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let session: GameSessionController
   @Binding var paletteExpanded: Bool
   let onClose: () -> Void
@@ -361,12 +370,13 @@ private struct GameStatusBar: View {
         .opacity(paletteExpanded ? 0 : 1)
         .accessibilityHidden(paletteExpanded)
 
-        VStack(spacing: 1) {
+        VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 4 : 1) {
           if session.phase.isFinished {
             Text(gameTimeString(session.elapsedSeconds))
               .font(.rubik(14, weight: .regular))
               .monospacedDigit()
-              .frame(height: 45)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(height: dynamicTypeSize.isAccessibilitySize ? nil : 45)
               .accessibilityIdentifier("game.timer")
           } else {
             HStack(spacing: 5) {
@@ -376,7 +386,8 @@ private struct GameStatusBar: View {
                 .monospacedDigit()
                 .accessibilityIdentifier("game.mines")
             }
-            .frame(height: 27)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? nil : 27)
 
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
               Text(session.elapsedSeconds == 0 ? "" : gameTimeString(session.elapsedSeconds))
@@ -384,10 +395,14 @@ private struct GameStatusBar: View {
                 .monospacedDigit()
                 .accessibilityIdentifier("game.timer")
             }
-            .frame(height: 18)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? nil : 18)
           }
         }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 60 : 0)
         .padding(.top, 14)
+        .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 17 : 0)
         .opacity(session.phase == .ready ? 0.42 : 1)
         .opacity(paletteExpanded ? 0 : 1)
         .accessibilityHidden(paletteExpanded)
@@ -399,7 +414,8 @@ private struct GameStatusBar: View {
             .transition(.scale(scale: 0.9, anchor: .trailing).combined(with: .opacity))
         }
       }
-      .frame(height: 76)
+      .frame(height: dynamicTypeSize.isAccessibilitySize ? nil : 76)
+      .frame(minHeight: 76)
       .background {
         LinearGradient(
           stops: [
@@ -487,6 +503,7 @@ private struct ActionToggle: View {
 @MainActor
 private struct EndGameControls: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var selection: ReplicaDifficulty
   let onRestart: (ReplicaDifficulty) -> Void
 
@@ -508,14 +525,16 @@ private struct EndGameControls: View {
         difficultyArrow("chevron.left", offset: -1)
         Text(selection.title)
           .font(.rubik(14, weight: .medium))
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
           .frame(maxWidth: .infinity)
           .accessibilityIdentifier("game.endDifficulty")
         difficultyArrow("chevron.right", offset: 1)
       }
-      .frame(height: 40)
+      .frame(minHeight: 44)
     }
     .foregroundStyle(store.theme.foreground.opacity(0.84))
-    .padding(.horizontal, 50)
+    .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 50)
     // Match the phone composition without letting the pill stretch across an
     // iPad or a wide Stage Manager window.
     .frame(maxWidth: 440)
@@ -542,6 +561,7 @@ private struct EndGameControls: View {
 @MainActor
 private struct ResultCard: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let session: GameSessionController
   let onDismiss: () -> Void
 
@@ -558,30 +578,17 @@ private struct ResultCard: View {
           .font(.rubik(13, weight: .regular))
           .foregroundStyle(store.theme.muted)
       }
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
 
       let best = Array(store.records(for: session.difficulty).prefix(10))
       if !best.isEmpty {
-        VStack(spacing: 2) {
-          ForEach(Array(best.enumerated()), id: \.element.id) { index, record in
-            HStack(spacing: 8) {
-              Text("\(index + 1).")
-              Text(Self.dateFormatter.string(from: record.date))
-              Spacer()
-              Text(record.seconds.androidDurationString).monospacedDigit()
-            }
-            .font(.rubik(12, weight: .regular))
-            .foregroundStyle(
-              record.id == session.completionRecord?.id
-                ? store.theme.coveredForeground
-                : store.theme.foreground.opacity(0.84)
-            )
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(
-              record.id == session.completionRecord?.id
-                ? store.theme.covered : Color.clear
-            )
+        if dynamicTypeSize.isAccessibilitySize {
+          ScrollView {
+            resultRows(best)
           }
+        } else {
+          resultRows(best)
         }
       }
 
@@ -591,13 +598,56 @@ private struct ResultCard: View {
     }
     .foregroundStyle(store.theme.foreground)
     .padding(17)
-    .frame(maxWidth: 360)
+    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 560 : 360)
     .background {
       RoundedRectangle(cornerRadius: 9, style: .continuous)
         .fill(store.theme.background)
         .overlay(
           SemiMatteRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true)
         )
+    }
+  }
+
+  private func resultRows(_ records: [ReplicaTimeRecord]) -> some View {
+    VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 8 : 2) {
+      ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
+        Group {
+          if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+              HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(index + 1).")
+                Text(record.seconds.androidDurationString)
+                  .monospacedDigit()
+                  .frame(maxWidth: .infinity, alignment: .trailing)
+              }
+              Text(Self.dateFormatter.string(from: record.date))
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 8)
+          } else {
+            HStack(spacing: 8) {
+              Text("\(index + 1).")
+              Text(Self.dateFormatter.string(from: record.date))
+              Spacer()
+              Text(record.seconds.androidDurationString).monospacedDigit()
+            }
+            .frame(height: 22)
+          }
+        }
+        .font(.rubik(12, weight: .regular))
+        .foregroundStyle(
+          record.id == session.completionRecord?.id
+            ? store.theme.coveredForeground
+            : store.theme.foreground.opacity(0.84)
+        )
+        .padding(.horizontal, 8)
+        .background(
+          record.id == session.completionRecord?.id
+            ? store.theme.covered : Color.clear
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(record.id == session.completionRecord?.id ? .isSelected : [])
+      }
     }
   }
 

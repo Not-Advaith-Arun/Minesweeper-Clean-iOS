@@ -271,6 +271,7 @@ extension View {
 }
 
 struct CleanButtonStyle: ButtonStyle {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let theme: AppTheme
   var filled = false
 
@@ -278,6 +279,9 @@ struct CleanButtonStyle: ButtonStyle {
     configuration.label
       .font(.rubik(15, weight: .medium))
       .foregroundStyle(theme.foreground)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
       .frame(maxWidth: .infinity, minHeight: 42)
       .padding(.horizontal, 18)
       .background {
@@ -289,6 +293,8 @@ struct CleanButtonStyle: ButtonStyle {
         cornerRadius: 21,
         emphasized: filled || configuration.isPressed
       )
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
       .scaleEffect(configuration.isPressed ? 0.975 : 1)
       .opacity(configuration.isPressed ? 0.92 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
@@ -296,6 +302,7 @@ struct CleanButtonStyle: ButtonStyle {
 }
 
 struct AndroidPillButtonStyle: ButtonStyle {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let theme: AppTheme
   var filled = false
 
@@ -303,6 +310,9 @@ struct AndroidPillButtonStyle: ButtonStyle {
     configuration.label
       .font(.rubik(14, weight: .regular))
       .foregroundStyle(theme.foreground.opacity(filled ? 0.94 : 0.82))
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
       .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
       .padding(.horizontal, 20)
       .background {
@@ -313,6 +323,8 @@ struct AndroidPillButtonStyle: ButtonStyle {
         theme: theme,
         emphasized: filled || configuration.isPressed
       )
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
       .opacity(configuration.isPressed ? 0.92 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
@@ -333,18 +345,25 @@ struct RoundIconButtonStyle: ButtonStyle {
         Circle().fill(theme.accent.opacity(filled ? 0.14 : 0.055))
       }
       .adaptiveGlassCircle(theme: theme, emphasized: filled || configuration.isPressed)
+      .contentShape(Circle())
       .scaleEffect(configuration.isPressed ? 0.9 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
   }
 }
 
 struct GlassDestructivePillButtonStyle: ButtonStyle {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let theme: AppTheme
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.rubik(14, weight: .medium))
-      .foregroundStyle(theme.mine)
+      // Board mine colors can be intentionally dark. Control text needs a
+      // readable red against the themed surface at every text size.
+      .foregroundStyle(theme.usesLightBackground ? Color(hex: 0xB3261E) : Color(hex: 0xFF8A80))
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
       .frame(maxWidth: .infinity, minHeight: ReplicaMetrics.pillHeight)
       .padding(.horizontal, 20)
       .background {
@@ -352,6 +371,8 @@ struct GlassDestructivePillButtonStyle: ButtonStyle {
           .fill(theme.mine.opacity(configuration.isPressed ? 0.18 : 0.08))
       }
       .adaptiveGlassCapsule(theme: theme, emphasized: configuration.isPressed)
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
       .scaleEffect(configuration.isPressed ? 0.985 : 1)
       .opacity(configuration.isPressed ? 0.92 : 1)
       .animation(ReplicaMotion.pressFeedback, value: configuration.isPressed)
@@ -549,30 +570,52 @@ struct PaletteIcon: View {
 }
 
 struct ReplicaScreenHeader: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let title: String
   let theme: AppTheme
   let dismiss: () -> Void
 
   var body: some View {
-    ZStack {
-      Text(title)
-        .font(.rubik(20, weight: .medium))
-        .foregroundStyle(theme.foreground)
-
-      HStack {
-        Button(action: dismiss) {
-          BackArrowIcon(color: theme.foreground)
-            .frame(width: 28, height: 28)
-            .contentShape(Rectangle())
+    Group {
+      if dynamicTypeSize.isAccessibilitySize {
+        HStack(alignment: .top, spacing: 12) {
+          backButton
+          heading
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
-        .accessibilityLabel("Back")
-        .accessibilityIdentifier("replica.back")
-        Spacer()
+        .frame(minHeight: 52)
+      } else {
+        ZStack {
+          heading
+          HStack {
+            backButton
+            Spacer()
+          }
+        }
+        .frame(height: 52)
       }
     }
-    .frame(height: 52)
     .padding(.horizontal, 18)
+  }
+
+  private var heading: some View {
+    Text(title)
+      .font(.rubik(20, weight: .medium))
+      .foregroundStyle(theme.foreground)
+      .multilineTextAlignment(.center)
+      .accessibilityAddTraits(.isHeader)
+  }
+
+  private var backButton: some View {
+    Button(action: dismiss) {
+      BackArrowIcon(color: theme.foreground)
+        .frame(width: 28, height: 28)
+    }
+    .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
+    .accessibilityLabel("Back")
+    .accessibilityIdentifier("replica.back")
   }
 }
 

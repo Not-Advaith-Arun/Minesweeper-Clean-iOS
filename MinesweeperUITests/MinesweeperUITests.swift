@@ -567,8 +567,13 @@ final class MinesweeperUITests: XCTestCase {
 
     XCTAssertTrue(app.buttons["home.times"].waitForExistence(timeout: 4))
     app.buttons["home.times"].tap()
-    XCTAssertTrue(app.staticTexts["17S"].waitForExistence(timeout: 2))
-    XCTAssertTrue(app.staticTexts["50S"].exists)
+    let firstRecord = app.descendants(matching: .any)
+      .matching(identifier: "times.record.10000000-0000-0000-0000-000000000001").firstMatch
+    let lastRecord = app.descendants(matching: .any)
+      .matching(identifier: "times.record.10000000-0000-0000-0000-000000000005").firstMatch
+    XCTAssertTrue(firstRecord.waitForExistence(timeout: 2))
+    XCTAssertTrue(firstRecord.label.contains("17S"))
+    XCTAssertTrue(lastRecord.label.contains("50S"))
     try capture("times-populated")
 
     app.cells.firstMatch.swipeLeft()
@@ -577,7 +582,7 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.alerts["Delete this time?"].waitForExistence(timeout: 2))
     try capture("times-delete-confirmation")
     app.alerts["Delete this time?"].buttons["Cancel"].tap()
-    XCTAssertTrue(app.staticTexts["17S"].exists)
+    XCTAssertTrue(firstRecord.exists)
   }
 
   func testCaptureEndGameStates() throws {
@@ -869,6 +874,10 @@ final class MinesweeperUITests: XCTestCase {
   }
 
   func testHomeControlsKeepTheirSpacingWithResume() throws {
+    try verifyHomeSpacingWithResume(captureName: "polish-home-resume")
+  }
+
+  private func verifyHomeSpacingWithResume(captureName: String) throws {
     let newGame = app.buttons["home.newGame"]
     XCTAssertTrue(newGame.waitForExistence(timeout: 5))
     newGame.tap()
@@ -885,7 +894,7 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertGreaterThanOrEqual(resume.frame.minY - newGame.frame.maxY, 12)
     XCTAssertGreaterThanOrEqual(
       app.buttons["home.settings"].frame.minY - resume.frame.maxY, 12)
-    try capture("polish-home-resume")
+    try capture(captureName)
   }
 
   func testAnimationOffFinishesAndRestartsWithoutStaleControls() throws {
@@ -1089,4 +1098,116 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 5), .completed)
   }
 
+  func testLargestTextHomeThemesAndSettingsRemainUsable() throws {
+    app.terminate()
+    app.launchArguments = [
+      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+    ]
+    app.launch()
+    XCTAssertGreaterThan(app.buttons["home.newGame"].frame.height, 44)
+    let difficulty = app.descendants(matching: .any)["home.difficulty"]
+    app.buttons["home.nextDifficulty"].tap()
+    XCTAssertTrue(difficulty.label.contains("Easy"))
+    app.buttons["home.previousDifficulty"].tap()
+    XCTAssertTrue(difficulty.label.contains("Beginner"))
+    try verifyHomeSpacingWithResume(captureName: "edge-large-text-home-resume")
+    for _ in 0..<4 where !app.buttons["home.quickThemes"].isHittable { app.swipeDown() }
+    app.buttons["home.quickThemes"].tap()
+    let material = app.buttons["theme.material_you_amoled"]
+    XCTAssertTrue(material.waitForExistence(timeout: 3))
+    XCTAssertGreaterThan(material.frame.width, 250)
+    XCTAssertGreaterThan(material.frame.height, 56)
+    try capture("edge-large-text-themes-top")
+    let monokai = app.buttons["theme.monokai"]
+    for _ in 0..<6 where !monokai.isHittable { app.swipeUp() }
+    XCTAssertTrue(monokai.isHittable)
+    monokai.tap()
+    XCTAssertTrue(monokai.isSelected)
+    try capture("edge-large-text-themes-bottom")
+    app.buttons["replica.back"].tap()
+    for _ in 0..<4 where !app.buttons["home.settings"].isHittable { app.swipeUp() }
+    app.buttons["home.settings"].tap()
+    try capture("edge-large-text-settings-top")
+    let flag = app.buttons["settings.primaryAction.flag"]
+    for _ in 0..<12 where !flag.isHittable { app.swipeUp() }
+    XCTAssertTrue(flag.isHittable)
+    flag.tap()
+    XCTAssertTrue(flag.isSelected)
+    try capture("edge-large-text-default-action")
+    let reset = app.buttons["settings.reset"]
+    for _ in 0..<14 where !reset.isHittable { app.swipeUp() }
+    XCTAssertTrue(reset.isHittable)
+    try capture("edge-large-text-reset")
+    reset.tap()
+    let confirmation = app.alerts["Reset settings?"]
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+    confirmation.buttons["Cancel"].tap()
+    for _ in 0..<14 where !flag.isHittable { app.swipeDown() }
+    XCTAssertTrue(flag.isSelected)
+  }
+
+  func testLargestTextResultAndTimesRemainUsable() throws {
+    app.terminate()
+    app.launchArguments = [
+      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+    ]
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "won"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_RECORDS"] = "1"
+    app.launch()
+    let dismiss = app.buttons["game.dismissResult"]
+    XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+    XCTAssertTrue(dismiss.isHittable)
+    XCTAssertGreaterThan(dismiss.frame.height, 44)
+    try capture("edge-large-text-result")
+    app.scrollViews.firstMatch.swipeUp()
+    XCTAssertTrue(dismiss.isHittable)
+    try capture("edge-large-text-result-scrolled")
+    dismiss.tap()
+    let restart = app.buttons["game.startNew"]
+    XCTAssertTrue(restart.waitForExistence(timeout: 3))
+    XCTAssertTrue(restart.isHittable)
+    XCTAssertLessThanOrEqual(restart.frame.maxY, app.frame.maxY - 12)
+    app.buttons["game.nextDifficulty"].tap()
+    XCTAssertEqual(app.staticTexts["game.endDifficulty"].label, "Medium")
+    try capture("edge-large-text-end-controls")
+    app.buttons["game.back"].tap()
+    for _ in 0..<4 where !app.buttons["home.times"].isHittable { app.swipeUp() }
+    app.buttons["home.times"].tap()
+    app.buttons["times.previousDifficulty"].tap()
+    let record = app.descendants(matching: .any)
+      .matching(identifier: "times.record.10000000-0000-0000-0000-000000000001").firstMatch
+    XCTAssertTrue(record.waitForExistence(timeout: 3))
+    XCTAssertTrue(record.label.contains("17S"))
+    try capture("edge-large-text-times")
+    app.cells.firstMatch.swipeLeft()
+    app.buttons["Delete"].tap()
+    let confirmation = app.alerts["Delete this time?"]
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+    confirmation.buttons["Cancel"].tap()
+    XCTAssertTrue(record.exists)
+  }
+
+  func testLargestTextPlayingCountersAndControlsRemainUsable() throws {
+    app.terminate()
+    app.launchArguments = [
+      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+    ]
+    app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_GAME_STATE"] = "topology"
+    app.launch()
+    let mines = app.staticTexts["game.mines"]
+    let timer = app.staticTexts["game.timer"]
+    XCTAssertTrue(mines.waitForExistence(timeout: 5))
+    XCTAssertTrue(timer.waitForExistence(timeout: 3))
+    XCTAssertGreaterThan(mines.frame.height, 27)
+    XCTAssertFalse(timer.label.isEmpty)
+    XCTAssertGreaterThanOrEqual(timer.frame.minY - mines.frame.maxY, 3)
+    XCTAssertTrue(app.buttons["game.back"].isHittable)
+    let flag = app.buttons["Flag"]
+    XCTAssertTrue(flag.waitForExistence(timeout: 3))
+    flag.tap()
+    XCTAssertEqual(flag.value as? String, "Selected")
+    try capture("edge-large-text-playing")
+  }
 }

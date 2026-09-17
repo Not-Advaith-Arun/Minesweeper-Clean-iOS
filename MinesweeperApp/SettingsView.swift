@@ -138,6 +138,7 @@ private struct SettingsToggle: View {
         Text(title).font(.rubik(16, weight: .regular))
         Text(detail).font(.rubik(12)).foregroundStyle(store.theme.muted.opacity(0.84))
       }
+      .fixedSize(horizontal: false, vertical: true)
     }
     .toggleStyle(.switch)
     .tint(store.theme.accent)
@@ -150,13 +151,17 @@ private struct SettingsToggle: View {
 
 private struct SettingsPicker: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let title: String
   @Binding var selection: PrimaryAction
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(title).font(.rubik(16, weight: .regular))
-      HStack(spacing: 8) {
+        .fixedSize(horizontal: false, vertical: true)
+      let layout = dynamicTypeSize.isAccessibilitySize
+        ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+      layout {
         ForEach(PrimaryAction.allCases) { action in
           Button {
             selection = action
@@ -167,7 +172,11 @@ private struct SettingsPicker: View {
               .foregroundStyle(
                 store.theme.foreground.opacity(selection == action ? 1 : 0.76)
               )
+              .fixedSize(horizontal: false, vertical: true)
+              .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 8 : 0)
+              .padding(.horizontal, 12)
               .frame(maxWidth: .infinity, minHeight: 44)
+              .contentShape(Rectangle())
               .background {
                 Capsule(style: .continuous)
                   .fill(
@@ -200,6 +209,8 @@ private struct SettingsPicker: View {
 
 private struct SettingsSlider: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .body) private var valueFontSize = 12.0
   let title: String
   @Binding var value: Double
   let range: ClosedRange<Double>
@@ -210,13 +221,20 @@ private struct SettingsSlider: View {
 
   var body: some View {
     VStack(spacing: 6) {
-      HStack {
-        Text(title).font(.rubik(16, weight: .regular))
-        Spacer()
+      let layout = dynamicTypeSize.isAccessibilitySize
+        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+        : AnyLayout(HStackLayout())
+      layout {
+        Text(title)
+          .font(.rubik(16, weight: .regular))
+          .fixedSize(horizontal: false, vertical: true)
+        if !dynamicTypeSize.isAccessibilitySize { Spacer() }
         Text(formatted(value))
-          .font(.system(size: 12, weight: .medium, design: .monospaced))
+          .font(.system(size: valueFontSize, weight: .medium, design: .monospaced))
           .foregroundStyle(store.theme.muted)
+          .fixedSize(horizontal: false, vertical: true)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       Slider(value: $value, in: range, step: step)
         .tint(store.theme.accent)
         .accessibilityLabel(title)

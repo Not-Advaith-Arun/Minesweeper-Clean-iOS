@@ -3,7 +3,13 @@ import SwiftUI
 struct ThemeLibraryView: View {
   @Environment(AppStore.self) private var store
   @Environment(\.dismiss) private var dismiss
-  private let columns = [GridItem(.adaptive(minimum: 148), spacing: 14)]
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  private var columns: [GridItem] {
+    dynamicTypeSize.isAccessibilitySize
+      ? [GridItem(.flexible())]
+      : [GridItem(.adaptive(minimum: 148), spacing: 14)]
+  }
 
   var body: some View {
     let theme = store.theme
@@ -37,6 +43,7 @@ struct ThemeLibraryView: View {
 
 private struct ThemeCard: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let theme: AppTheme
   let selected: Bool
 
@@ -46,8 +53,8 @@ private struct ThemeCard: View {
       Text(theme.name)
         .font(.rubik(13, weight: .regular))
         .foregroundStyle(theme.foreground.opacity(0.84))
-        .lineLimit(2)
-        .minimumScaleFactor(0.84)
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       Image(systemName: "checkmark")
         .font(.system(size: 13, weight: .regular))
@@ -57,7 +64,9 @@ private struct ThemeCard: View {
         .accessibilityHidden(true)
     }
     .padding(.horizontal, 14)
+    .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 12 : 0)
     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+    .contentShape(Rectangle())
     .background {
       SemiMatteRoundedSurface(theme: store.theme, cornerRadius: 7, emphasized: selected)
         .overlay {

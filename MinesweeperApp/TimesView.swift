@@ -3,6 +3,7 @@ import SwiftUI
 struct TimesView: View {
   @Environment(AppStore.self) private var store
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var difficulty: ReplicaDifficulty = .medium
   @State private var pendingDeletion: ReplicaTimeRecord?
 
@@ -16,21 +17,17 @@ struct TimesView: View {
 
         let records = store.records(for: difficulty)
         if records.isEmpty {
-          Spacer()
-          VStack(spacing: 14) {
-            Image(systemName: "stopwatch")
-              .font(.system(size: 42, weight: .ultraLight))
-              .foregroundStyle(theme.foreground.opacity(0.54))
-            Text("No times yet.")
-              .font(.rubik(20, weight: .regular))
-            Text("Complete a \(difficulty.title.lowercased()) game to set your first time.")
-              .font(.rubik(13))
-              .foregroundStyle(theme.muted.opacity(0.84))
-              .multilineTextAlignment(.center)
+          if dynamicTypeSize.isAccessibilitySize {
+            ScrollView {
+              emptyState
+                .padding(.vertical, 24)
+                .frame(maxWidth: .infinity)
+            }
+          } else {
+            Spacer()
+            emptyState
+            Spacer()
           }
-          .foregroundStyle(theme.foreground.opacity(0.78))
-          .padding(.horizontal, 42)
-          Spacer()
         } else {
           List {
             ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
@@ -66,6 +63,23 @@ struct TimesView: View {
     }
   }
 
+  private var emptyState: some View {
+    VStack(spacing: 14) {
+      Image(systemName: "stopwatch")
+        .font(.system(size: 42, weight: .ultraLight))
+        .foregroundStyle(store.theme.foreground.opacity(0.54))
+      Text("No times yet.")
+        .font(.rubik(20, weight: .regular))
+      Text("Complete a \(difficulty.title.lowercased()) game to set your first time.")
+        .font(.rubik(13))
+        .foregroundStyle(store.theme.muted.opacity(0.84))
+    }
+    .multilineTextAlignment(.center)
+    .fixedSize(horizontal: false, vertical: true)
+    .foregroundStyle(store.theme.foreground.opacity(0.78))
+    .padding(.horizontal, 42)
+  }
+
   private var deletionAlert: Binding<Bool> {
     Binding(
       get: { pendingDeletion != nil },
@@ -76,6 +90,7 @@ struct TimesView: View {
 
 private struct TimesDifficultySelector: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Binding var selection: ReplicaDifficulty
 
   var body: some View {
@@ -83,11 +98,16 @@ private struct TimesDifficultySelector: View {
       arrow("chevron.left", offset: -1)
       Text(selection.title)
         .font(.rubik(14, weight: .regular))
-      .frame(width: 150)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 150)
+        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil)
       arrow("chevron.right", offset: 1)
     }
     .foregroundStyle(store.theme.foreground.opacity(0.82))
-    .frame(height: 44)
+    .frame(minHeight: 44)
+    .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 24 : 0)
+    .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? 480 : nil)
   }
 
   private func arrow(_ symbol: String, offset: Int) -> some View {
@@ -110,6 +130,8 @@ private struct TimesDifficultySelector: View {
 
 private struct TimeRow: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .body) private var durationFontSize = 20.0
   let rank: Int
   let record: ReplicaTimeRecord
 
@@ -121,19 +143,42 @@ private struct TimeRow: View {
   }()
 
   var body: some View {
-    HStack(spacing: 14) {
-      Text("\(rank)")
-        .font(.rubik(13, weight: .regular))
-        .foregroundStyle(store.theme.muted)
-        .frame(width: 25)
-      Text(record.seconds.androidDurationString)
-        .font(.system(size: 20, weight: .regular, design: .monospaced))
-        .foregroundStyle(store.theme.foreground.opacity(0.82))
-      Spacer()
-      Text(Self.dateFormatter.string(from: record.date))
-        .font(.rubik(11))
-        .foregroundStyle(store.theme.muted.opacity(0.84))
+    Group {
+      if dynamicTypeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("\(rank).")
+            .font(.rubik(13, weight: .regular))
+            .foregroundStyle(store.theme.muted)
+          duration
+          date
+        }
+        .fixedSize(horizontal: false, vertical: true)
+      } else {
+        HStack(spacing: 14) {
+          Text("\(rank)")
+            .font(.rubik(13, weight: .regular))
+            .foregroundStyle(store.theme.muted)
+            .frame(width: 25)
+          duration
+          Spacer()
+          date
+        }
+      }
     }
     .padding(.vertical, 11)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("times.record.\(record.id.uuidString)")
+  }
+
+  private var duration: some View {
+    Text(record.seconds.androidDurationString)
+      .font(.system(size: durationFontSize, weight: .regular, design: .monospaced))
+      .foregroundStyle(store.theme.foreground.opacity(0.82))
+  }
+
+  private var date: some View {
+    Text(Self.dateFormatter.string(from: record.date))
+      .font(.rubik(11))
+      .foregroundStyle(store.theme.muted.opacity(0.84))
   }
 }

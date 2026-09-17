@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private var theme: AppTheme { store.theme }
 
@@ -10,75 +11,12 @@ struct HomeView: View {
     ZStack {
       ReplicaBackground(theme: theme)
       GeometryReader { geometry in
-        let width = geometry.size.width
-        // Use the active window, not the physical display. This keeps the
-        // composition centered in iPad Split View and Stage Manager.
-        let height = geometry.size.height
-        let hasSavedGame = store.savedGames[store.selectedDifficulty] != nil
-        let controlWidth = min(ReplicaMetrics.maxControlWidth, width - 72)
-        // Keep the established tall-screen anchors, but let the controls flow
-        // vertically on short screens so Resume cannot crowd the carousel.
-        let preferredActionGap = height * (hasSavedGame ? 0.085 : 0.055)
-          - (hasSavedGame ? 29 : 0) - 40
-        let actionGap = max(12, preferredActionGap)
-        let logoSize = min(144, max(96, height * 0.28 - 72))
-        let controlsBottom = height * 0.445 + 20 + actionGap + (hasSavedGame ? 98 : 40)
-
-        Button {
-          store.navigation.append(.themes)
-        } label: {
-          PaletteIcon(
-            color: theme.foreground.opacity(0.76),
-            holeColor: theme.background
-          )
-            .frame(width: 27, height: 27)
+        if dynamicTypeSize.isAccessibilitySize || geometry.size.height < 500 {
+          flowingHome
+        } else {
+          anchoredHome
         }
-        .buttonStyle(RoundIconButtonStyle(theme: theme, size: 48))
-        .accessibilityLabel("Themes")
-        .accessibilityIdentifier("home.quickThemes")
-        .position(x: width - 32, y: height * 0.083)
-
-        MineLogo(theme: theme, size: logoSize)
-          .accessibilityLabel("Minesweeper")
-          .position(x: width / 2, y: height * 0.305)
-
-        VStack(spacing: actionGap) {
-          DifficultyCarousel(selection: $store.selectedDifficulty)
-            .frame(height: 40)
-
-          VStack(spacing: 18) {
-            Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
-              .buttonStyle(AndroidPillButtonStyle(theme: theme, filled: true))
-              .disabled(!store.persistenceReady)
-              .opacity(store.persistenceReady ? 1 : 0.62)
-              .accessibilityIdentifier("home.newGame")
-
-            if let saved = store.savedGames[store.selectedDifficulty] {
-              Button {
-                store.resume(store.selectedDifficulty)
-              } label: {
-                HStack(spacing: 8) {
-                  Text("Resume")
-                  Text(saved.elapsedSeconds.clockString)
-                    .monospacedDigit()
-                    .font(.rubik(16, weight: .regular))
-                    .foregroundStyle(theme.muted.opacity(0.72))
-                }
-              }
-              .buttonStyle(AndroidPillButtonStyle(theme: theme))
-              .accessibilityIdentifier("home.resume")
-            }
-          }
-        }
-        .frame(width: controlWidth)
-        .frame(width: width)
-        .padding(.top, height * 0.445 - 20)
-
-        HomeActionBar()
-          .frame(width: min(160, width - 110))
-          .position(x: width / 2, y: max(height * 0.690, controlsBottom + 42))
       }
-      .ignoresSafeArea()
     }
     .foregroundStyle(theme.foreground.opacity(0.78))
     .toolbar(.hidden, for: .navigationBar)
@@ -89,10 +27,121 @@ struct HomeView: View {
       Text("Your unfinished \(store.pendingDifficulty?.title ?? "") game will be replaced.")
     }
   }
+
+  private var anchoredHome: some View {
+    @Bindable var store = store
+    return GeometryReader { geometry in
+      let width = geometry.size.width
+      // Use the active window, not the physical display. This keeps the
+      // composition centered in iPad Split View and Stage Manager.
+      let height = geometry.size.height
+      let hasSavedGame = store.savedGames[store.selectedDifficulty] != nil
+      let controlWidth = min(ReplicaMetrics.maxControlWidth, width - 72)
+      // Keep the established tall-screen anchors, but let the controls flow
+      // vertically on short screens so Resume cannot crowd the carousel.
+      let preferredActionGap = height * (hasSavedGame ? 0.085 : 0.055)
+        - (hasSavedGame ? 29 : 0) - 40
+      let actionGap = max(12, preferredActionGap)
+      let logoSize = min(144, max(96, height * 0.28 - 72))
+      let controlsBottom = height * 0.445 + 20 + actionGap + (hasSavedGame ? 106 : 44)
+
+      themeButton
+        .position(x: width - 32, y: height * 0.083)
+
+      MineLogo(theme: theme, size: logoSize)
+        .accessibilityLabel("Minesweeper")
+        .position(x: width / 2, y: height * 0.305)
+
+      VStack(spacing: actionGap) {
+        DifficultyCarousel(selection: $store.selectedDifficulty)
+          .frame(height: 40)
+
+        gameActions
+      }
+      .frame(width: controlWidth)
+      .frame(width: width)
+      .padding(.top, height * 0.445 - 20)
+
+      HomeActionBar()
+        .frame(width: min(160, width - 110))
+        .position(x: width / 2, y: max(height * 0.690, controlsBottom + 42))
+    }
+    .ignoresSafeArea()
+  }
+
+  private var flowingHome: some View {
+    @Bindable var store = store
+    return ScrollView {
+      VStack(spacing: 24) {
+        VStack(spacing: 16) {
+          HStack {
+            Spacer()
+            themeButton
+          }
+          MineLogo(theme: theme, size: 80)
+        }
+
+        VStack(spacing: 16) {
+          DifficultyCarousel(selection: $store.selectedDifficulty)
+            .frame(minHeight: 44)
+          gameActions
+        }
+        .frame(maxWidth: 440)
+
+        HomeActionBar()
+          .frame(width: 160)
+      }
+      .padding(.horizontal, 24)
+      .padding(.top, 8)
+      .padding(.bottom, 24)
+      .frame(maxWidth: .infinity)
+    }
+  }
+
+  private var themeButton: some View {
+    Button {
+      store.navigation.append(.themes)
+    } label: {
+      PaletteIcon(color: theme.foreground.opacity(0.76), holeColor: theme.background)
+        .frame(width: 27, height: 27)
+    }
+    .buttonStyle(RoundIconButtonStyle(theme: theme, size: 48))
+    .accessibilityLabel("Themes")
+    .accessibilityIdentifier("home.quickThemes")
+  }
+
+  private var gameActions: some View {
+    VStack(spacing: 18) {
+      Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
+        .buttonStyle(AndroidPillButtonStyle(theme: theme, filled: true))
+        .disabled(!store.persistenceReady)
+        .opacity(store.persistenceReady ? 1 : 0.62)
+        .accessibilityIdentifier("home.newGame")
+
+      if let saved = store.savedGames[store.selectedDifficulty] {
+        Button {
+          store.resume(store.selectedDifficulty)
+        } label: {
+          let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+          layout {
+            Text("Resume")
+            Text(saved.elapsedSeconds.clockString)
+              .monospacedDigit()
+              .font(.rubik(16, weight: .regular))
+              .foregroundStyle(theme.muted.opacity(0.72))
+          }
+        }
+        .buttonStyle(AndroidPillButtonStyle(theme: theme))
+        .accessibilityIdentifier("home.resume")
+      }
+    }
+  }
 }
 
 private struct DifficultyCarousel: View {
   @Environment(AppStore.self) private var store
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Binding var selection: ReplicaDifficulty
 
   var body: some View {
@@ -109,16 +158,25 @@ private struct DifficultyCarousel: View {
       .accessibilityLabel("Previous difficulty")
       .accessibilityIdentifier("home.previousDifficulty")
 
-      TabView(selection: $selection) {
-        ForEach(ReplicaDifficulty.allCases) { difficulty in
-          Text(difficulty.title)
-            .font(.rubik(14, weight: .regular))
-            .foregroundStyle(theme.foreground.opacity(0.78))
-            .tag(difficulty)
+      if dynamicTypeSize.isAccessibilitySize {
+        Text(selection.title)
+          .font(.rubik(14, weight: .regular))
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity)
+      } else {
+        TabView(selection: $selection) {
+          ForEach(ReplicaDifficulty.allCases) { difficulty in
+            Text(difficulty.title)
+              .font(.rubik(14, weight: .regular))
+              .foregroundStyle(theme.foreground.opacity(0.78))
+              .tag(difficulty)
+          }
         }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(maxWidth: 168)
+        .frame(height: 40)
       }
-      .tabViewStyle(.page(indexDisplayMode: .never))
-      .frame(maxWidth: 168)
 
       Button {
         move(1)
@@ -137,6 +195,13 @@ private struct DifficultyCarousel: View {
       "Difficulty: \(selection.title), \(selection.size.columns) by \(selection.size.rows), \(selection.size.mines) mines"
     )
     .accessibilityIdentifier("home.difficulty")
+    .accessibilityAdjustableAction { direction in
+      switch direction {
+      case .increment: move(1)
+      case .decrement: move(-1)
+      @unknown default: break
+      }
+    }
   }
 
   private func move(_ offset: Int) {
@@ -191,6 +256,7 @@ struct QuickThemeBar: View {
               } label: {
                 ThemeSwatch(theme: theme, selected: theme.id == store.themeID, compact: true)
                   .frame(minWidth: 44, minHeight: 44)
+                  .contentShape(Rectangle())
               }
               .buttonStyle(.plain)
               .accessibilityLabel(theme.name)
