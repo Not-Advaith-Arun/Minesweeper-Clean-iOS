@@ -14,6 +14,15 @@ struct HomeView: View {
         // Use the active window, not the physical display. This keeps the
         // composition centered in iPad Split View and Stage Manager.
         let height = geometry.size.height
+        let hasSavedGame = store.savedGames[store.selectedDifficulty] != nil
+        let controlWidth = min(ReplicaMetrics.maxControlWidth, width - 72)
+        // Keep the established tall-screen anchors, but let the controls flow
+        // vertically on short screens so Resume cannot crowd the carousel.
+        let preferredActionGap = height * (hasSavedGame ? 0.085 : 0.055)
+          - (hasSavedGame ? 29 : 0) - 40
+        let actionGap = max(12, preferredActionGap)
+        let logoSize = min(144, max(96, height * 0.28 - 72))
+        let controlsBottom = height * 0.445 + 20 + actionGap + (hasSavedGame ? 98 : 40)
 
         Button {
           store.navigation.append(.themes)
@@ -29,43 +38,45 @@ struct HomeView: View {
         .accessibilityIdentifier("home.quickThemes")
         .position(x: width - 32, y: height * 0.083)
 
-        MineLogo(theme: theme, size: 144)
+        MineLogo(theme: theme, size: logoSize)
           .accessibilityLabel("Minesweeper")
           .position(x: width / 2, y: height * 0.305)
 
-        DifficultyCarousel(selection: $store.selectedDifficulty)
-          .frame(width: min(ReplicaMetrics.maxControlWidth, width - 72), height: 40)
-          .position(x: width / 2, y: height * 0.445)
+        VStack(spacing: actionGap) {
+          DifficultyCarousel(selection: $store.selectedDifficulty)
+            .frame(height: 40)
 
-        VStack(spacing: 18) {
-          Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
-            .buttonStyle(AndroidPillButtonStyle(theme: theme, filled: true))
-            .disabled(!store.persistenceReady)
-            .opacity(store.persistenceReady ? 1 : 0.62)
-            .accessibilityIdentifier("home.newGame")
+          VStack(spacing: 18) {
+            Button("New Game") { store.beginNewGame(for: store.selectedDifficulty) }
+              .buttonStyle(AndroidPillButtonStyle(theme: theme, filled: true))
+              .disabled(!store.persistenceReady)
+              .opacity(store.persistenceReady ? 1 : 0.62)
+              .accessibilityIdentifier("home.newGame")
 
-          if let saved = store.savedGames[store.selectedDifficulty] {
-            Button {
-              store.resume(store.selectedDifficulty)
-            } label: {
-              HStack(spacing: 8) {
-                Text("Resume")
-                Text(saved.elapsedSeconds.clockString)
-                  .monospacedDigit()
-                  .font(.rubik(16, weight: .regular))
-                  .foregroundStyle(theme.muted.opacity(0.72))
+            if let saved = store.savedGames[store.selectedDifficulty] {
+              Button {
+                store.resume(store.selectedDifficulty)
+              } label: {
+                HStack(spacing: 8) {
+                  Text("Resume")
+                  Text(saved.elapsedSeconds.clockString)
+                    .monospacedDigit()
+                    .font(.rubik(16, weight: .regular))
+                    .foregroundStyle(theme.muted.opacity(0.72))
+                }
               }
+              .buttonStyle(AndroidPillButtonStyle(theme: theme))
+              .accessibilityIdentifier("home.resume")
             }
-            .buttonStyle(AndroidPillButtonStyle(theme: theme))
-            .accessibilityIdentifier("home.resume")
           }
         }
-        .frame(width: min(ReplicaMetrics.maxControlWidth, width - 72))
-        .position(x: width / 2, y: height * (store.savedGames[store.selectedDifficulty] == nil ? 0.500 : 0.530))
+        .frame(width: controlWidth)
+        .frame(width: width)
+        .padding(.top, height * 0.445 - 20)
 
         HomeActionBar()
           .frame(width: min(160, width - 110))
-          .position(x: width / 2, y: height * 0.690)
+          .position(x: width / 2, y: max(height * 0.690, controlsBottom + 42))
       }
       .ignoresSafeArea()
     }
@@ -117,6 +128,8 @@ private struct DifficultyCarousel: View {
           .foregroundStyle(theme.foreground.opacity(0.54))
       }
       .buttonStyle(RoundIconButtonStyle(theme: theme, size: 44))
+      .accessibilityLabel("Next difficulty")
+      .accessibilityIdentifier("home.nextDifficulty")
     }
     .foregroundStyle(theme.foreground.opacity(0.78))
     .accessibilityElement(children: .combine)
@@ -177,6 +190,7 @@ struct QuickThemeBar: View {
                 store.chooseTheme(theme)
               } label: {
                 ThemeSwatch(theme: theme, selected: theme.id == store.themeID, compact: true)
+                  .frame(minWidth: 44, minHeight: 44)
               }
               .buttonStyle(.plain)
               .accessibilityLabel(theme.name)
@@ -195,19 +209,23 @@ struct QuickThemeBar: View {
           isExpanded.toggle()
         }
       } label: {
-        PaletteIcon(color: store.theme.background, holeColor: store.theme.covered)
+        PaletteIcon(color: store.theme.foreground.opacity(0.90), holeColor: store.theme.background)
           .frame(width: 25, height: 25)
       }
-      .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 43, filled: true))
+      .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 44, filled: true))
       .accessibilityLabel(isExpanded ? "Close theme picker" : "Open theme picker")
     }
     .frame(height: 48)
     .padding(.leading, isExpanded ? 5 : 0)
     .padding(.trailing, 3)
+    .background {
+      if isExpanded { BoardControlSurface(theme: store.theme) }
+    }
     .adaptiveGlassCapsule(
       theme: store.theme,
       emphasized: true,
-      enabled: isExpanded
+      enabled: isExpanded,
+      isInteractive: false
     )
   }
 }

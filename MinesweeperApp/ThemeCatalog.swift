@@ -111,6 +111,7 @@ struct AppTheme: Identifiable, Hashable {
   let background: Color
   let surface: Color
   let covered: Color
+  let coveredForeground: Color
   let flagged: Color
   let separator: Color
   let accent: Color
@@ -141,6 +142,14 @@ struct AppTheme: Identifiable, Hashable {
     self.background = Color(hex: background)
     self.surface = Color(hex: decodedRevealedSurface[id] ?? surface)
     self.covered = Color(hex: covered)
+    // Covered colors range from pale gold to near-black purple. Preserve the
+    // original inverse treatment only when it remains readable on that fill.
+    let coveredInk = Self.contrast(background, covered) >= 4.5
+      ? background
+      : [foreground, UInt32(0x000000), UInt32(0xFFFFFF)].max {
+        Self.contrast($0, covered) < Self.contrast($1, covered)
+      } ?? foreground
+    self.coveredForeground = Color(hex: coveredInk)
     self.flagged = Color(hex: decodedFlaggedSurface[id] ?? surface)
     self.separator = Color(hex: decodedSeparator[id] ?? muted)
     self.accent = Color(hex: accent)
@@ -157,6 +166,21 @@ struct AppTheme: Identifiable, Hashable {
 
   func clue(_ value: Int) -> Color {
     clueColors.indices.contains(value - 1) ? clueColors[value - 1] : foreground
+  }
+
+  private static func contrast(_ first: UInt32, _ second: UInt32) -> Double {
+    func luminance(_ hex: UInt32) -> Double {
+      func linear(_ channel: UInt32) -> Double {
+        let value = Double(channel) / 255
+        return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+      }
+      return 0.2126 * linear((hex >> 16) & 0xFF)
+        + 0.7152 * linear((hex >> 8) & 0xFF)
+        + 0.0722 * linear(hex & 0xFF)
+    }
+    let lhs = luminance(first)
+    let rhs = luminance(second)
+    return (max(lhs, rhs) + 0.05) / (min(lhs, rhs) + 0.05)
   }
 }
 
@@ -202,7 +226,7 @@ enum ThemeCatalog {
       accent: 0xE7791E, foreground: 0xE9E9E9, muted: 0xCFCFCF, mine: 0xB6350D,
       clues: [0xE9E9E9, 0xE9E9E9, 0xE9E9E9, 0xE9E9E9, 0xE9E9E9, 0xE9E9E9, 0xE9E9E9, 0xE9E9E9]),
     .init(
-      id: "amoled", name: "Amoled", background: 0x000000, surface: 0x000000, covered: 0xD1D1D1,
+      id: "amoled", name: "Mono OLED", background: 0x000000, surface: 0x000000, covered: 0xD1D1D1,
       accent: 0xFFFFFF, foreground: 0xF5F5F5, muted: 0xB7B7B7, mine: 0xC00B0B,
       clues: [0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5],
       isAMOLED: true),
@@ -232,7 +256,7 @@ enum ThemeCatalog {
       clues: [0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5],
       isAMOLED: true),
     .init(
-      id: "blue_amoled", name: "Blue Amoled", background: 0x000000, surface: 0x000000,
+      id: "blue_amoled", name: "Cobalt OLED", background: 0x000000, surface: 0x000000,
       covered: 0x3285B1, accent: 0x2563F1, foreground: 0xF5F5F5, muted: 0xB7B7B7, mine: 0xC00B0B,
       clues: [0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5, 0xF5F5F5],
       isAMOLED: true),
@@ -305,7 +329,7 @@ enum ThemeCatalog {
       mine: 0xD86E6E,
       clues: [0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82, 0x777A82]),
     .init(
-      id: "material_you_amoled", name: "Material You Amoled", background: 0x000000,
+      id: "material_you_amoled", name: "Material OLED", background: 0x000000,
       surface: 0x090909, covered: 0x3B273D, accent: 0xD7B8D9, foreground: 0xF7EEF7, muted: 0x9E949E,
       isAMOLED: true),
     .init(
@@ -315,21 +339,22 @@ enum ThemeCatalog {
       isAMOLED: true),
   ]
 
-  static let fallback = all[30]  // Material You, matching a fresh Android emulator install.
-  static let displayOrder: [AppTheme] =
-    [all[30]] + Array(all[0..<9]) + [all[31], all[32]] + Array(all[9..<30])
+  // Keep the decoded registry intact for saved-state compatibility and visual
+  // fixtures, but expose a deliberate dark/OLED collection in the product.
+  // Six distinct palettes are easier to scan than dozens of near-duplicates.
+  private static let selectableIDs = [
+    "material_you_amoled", "amoled", "blue_amoled", "alpine", "aurum", "monokai",
+  ]
+  static let selectable = selectableIDs.compactMap { id in
+    all.first { $0.id == id }
+  }
+  static let fallback = all.first { $0.id == "material_you_amoled" } ?? all[0]
+  static let displayOrder = selectable
+  static let quickDisplayOrder = selectable
 
-  // The Android in-game strip uses a curated light/dark sequence rather than
-  // the theme-library order. Keep the validated first viewport identical, then
-  // append the remaining themes so the strip stays fully scrollable.
-  static let quickDisplayOrder: [AppTheme] = {
-    let leadingIDs = [
-      "material_you", "aurum", "ambra", "alpine", "nennau", "kawa", "rossa", "diletto",
-    ]
-    let leading = leadingIDs.compactMap { id in all.first { $0.id == id } }
-    let leadingSet = Set(leadingIDs)
-    return leading + displayOrder.filter { !leadingSet.contains($0.id) }
-  }()
+  static func isSelectable(id: String) -> Bool {
+    selectableIDs.contains(id)
+  }
 
   static func theme(id: String) -> AppTheme { all.first { $0.id == id } ?? fallback }
 }

@@ -82,6 +82,22 @@ enum ReplicaMotion {
   }
 }
 
+/// Keeps floating controls readable over clues even when glass is nearly clear.
+struct BoardControlSurface: View {
+  let theme: AppTheme
+
+  var body: some View {
+    Capsule(style: .continuous)
+      .fill(theme.background.opacity(0.90))
+      .overlay {
+        Capsule(style: .continuous)
+          .stroke(theme.foreground.opacity(0.18), lineWidth: 1)
+      }
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+  }
+}
+
 /// Fallback chrome for iOS 17–25. Native Liquid Glass is applied directly to
 /// interactive controls below when the iOS 26 API is available.
 struct SemiMatteCapsuleSurface: View {
@@ -356,6 +372,37 @@ struct MineLogo: View {
   }
 }
 
+/// A compact, optically balanced mine for counters and segmented controls.
+/// The large home mark deliberately has longer teeth; scaling it down made the
+/// HUD look jagged and visually heavier than the adjacent number.
+struct MineCounterIcon: View {
+  let theme: AppTheme
+  var size: CGFloat = 18
+  var tint: Color? = nil
+  var holeTint: Color? = nil
+
+  var body: some View {
+    let foreground = tint ?? theme.foreground
+    ZStack {
+      ForEach(0..<8, id: \.self) { index in
+        Capsule(style: .continuous)
+          .fill(foreground)
+          .frame(width: size * 0.16, height: size * 0.25)
+          .offset(y: -size * 0.37)
+          .rotationEffect(.degrees(Double(index) * 45))
+      }
+      Circle()
+        .fill(foreground)
+        .frame(width: size * 0.67, height: size * 0.67)
+      RoundedRectangle(cornerRadius: size * 0.035, style: .continuous)
+        .fill(holeTint ?? theme.background)
+        .frame(width: size * 0.16, height: size * 0.16)
+    }
+    .frame(width: size, height: size)
+    .accessibilityHidden(true)
+  }
+}
+
 struct MineGlyph: Shape {
   func path(in rect: CGRect) -> Path {
     var path = Path()
@@ -523,7 +570,7 @@ extension View {
     self
       .toolbarBackground(theme.background, for: .navigationBar)
       .toolbarBackground(.visible, for: .navigationBar)
-      .toolbarColorScheme(theme.isAMOLED ? .dark : nil, for: .navigationBar)
+      .toolbarColorScheme(theme.usesLightBackground ? .light : .dark, for: .navigationBar)
       .tint(theme.foreground)
   }
 }

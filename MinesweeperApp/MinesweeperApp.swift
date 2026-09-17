@@ -8,7 +8,7 @@ struct MinesweeperReplicaApp: App {
     WindowGroup {
       AppRootView()
         .environment(store)
-        .preferredColorScheme(store.theme.isAMOLED ? .dark : nil)
+        .preferredColorScheme(store.theme.usesLightBackground ? .light : .dark)
     }
   }
 }

@@ -38,7 +38,7 @@ final class AppStore {
     let storedTheme = defaults.string(forKey: AppConstants.themeStorageKey)
     self.themeID =
       storedTheme.flatMap { identifier in
-        ThemeCatalog.all.contains { $0.id == identifier } ? identifier : nil
+        ThemeCatalog.isSelectable(id: identifier) ? identifier : nil
       } ?? ThemeCatalog.fallback.id
     self.records =
       Self.decode([ReplicaTimeRecord].self, key: AppConstants.recordsStorageKey, defaults: defaults)

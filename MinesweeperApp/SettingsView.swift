@@ -165,9 +165,9 @@ private struct SettingsPicker: View {
             Label(action.title, systemImage: action.symbol)
               .font(.rubik(13, weight: .regular))
               .foregroundStyle(
-                selection == action ? store.theme.background : store.theme.foreground
+                store.theme.foreground.opacity(selection == action ? 1 : 0.76)
               )
-              .frame(maxWidth: .infinity, minHeight: 38)
+              .frame(maxWidth: .infinity, minHeight: 44)
               .background {
                 Capsule(style: .continuous)
                   .fill(
@@ -180,8 +180,17 @@ private struct SettingsPicker: View {
                 theme: store.theme,
                 emphasized: selection == action
               )
+              .overlay {
+                Capsule(style: .continuous)
+                  .stroke(
+                    selection == action ? store.theme.accent.opacity(0.64) : .clear,
+                    lineWidth: 1
+                  )
+              }
           }
           .buttonStyle(.plain)
+          .accessibilityAddTraits(selection == action ? .isSelected : [])
+          .accessibilityIdentifier("settings.primaryAction.\(action.rawValue)")
         }
       }
     }
@@ -210,6 +219,8 @@ private struct SettingsSlider: View {
       }
       Slider(value: $value, in: range, step: step)
         .tint(store.theme.accent)
+        .accessibilityLabel(title)
+        .accessibilityValue(formatted(value))
         .accessibilityIdentifier(identifier ?? "settings.slider.\(title)")
     }
     .foregroundStyle(store.theme.foreground.opacity(0.84))

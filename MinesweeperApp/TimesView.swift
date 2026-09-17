@@ -103,6 +103,8 @@ private struct TimesDifficultySelector: View {
         .font(.system(size: 19, weight: .regular))
     }
     .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 44))
+    .accessibilityLabel(offset < 0 ? "Previous difficulty" : "Next difficulty")
+    .accessibilityIdentifier(offset < 0 ? "times.previousDifficulty" : "times.nextDifficulty")
   }
 }
 

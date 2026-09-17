@@ -18,6 +18,8 @@ struct ThemeLibraryView: View {
               ThemeCard(theme: candidate, selected: candidate.id == store.themeID)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(candidate.name)
+            .accessibilityAddTraits(candidate.id == store.themeID ? .isSelected : [])
             .accessibilityIdentifier("theme.\(candidate.id)")
           }
         }
@@ -39,21 +41,20 @@ private struct ThemeCard: View {
   let selected: Bool
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: 8) {
       ThemeSwatch(theme: theme, selected: selected, compact: true)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(theme.name)
-          .font(.rubik(13, weight: .regular))
-          .foregroundStyle(theme.foreground.opacity(0.84))
-          .lineLimit(2)
-          .minimumScaleFactor(0.84)
-      }
-      Spacer(minLength: 0)
-      if selected {
-        Image(systemName: "checkmark")
-          .font(.system(size: 13, weight: .regular))
-          .foregroundStyle(theme.accent)
-      }
+      Text(theme.name)
+        .font(.rubik(13, weight: .regular))
+        .foregroundStyle(theme.foreground.opacity(0.84))
+        .lineLimit(2)
+        .minimumScaleFactor(0.84)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      Image(systemName: "checkmark")
+        .font(.system(size: 13, weight: .regular))
+        .foregroundStyle(theme.accent)
+        .frame(width: 13)
+        .opacity(selected ? 1 : 0)
+        .accessibilityHidden(true)
     }
     .padding(.horizontal, 14)
     .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)

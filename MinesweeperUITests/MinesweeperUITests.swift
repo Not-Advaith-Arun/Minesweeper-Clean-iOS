@@ -165,7 +165,7 @@ final class MinesweeperUITests: XCTestCase {
 
   func testCaptureBoardCornerRegression() throws {
     app.terminate()
-    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "pink_amoled"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "blue_amoled"
     app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
     app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
     app.launch()
@@ -198,7 +198,7 @@ final class MinesweeperUITests: XCTestCase {
   }
 
   func testCaptureBoardTopologyPolishAcrossThemes() throws {
-    for theme in ["kawa", "pink_amoled", "nennau"] {
+    for theme in ["material_you_amoled", "amoled", "blue_amoled", "alpine", "aurum", "monokai"] {
       app.terminate()
       app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = theme
       app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
@@ -375,7 +375,7 @@ final class MinesweeperUITests: XCTestCase {
 
   func testCaptureGlassChromeInAMOLEDTheme() throws {
     app.terminate()
-    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "pink_amoled"
+    app.launchEnvironment["MINESWEEPER_UI_TEST_THEME"] = "blue_amoled"
     app.launchEnvironment["MINESWEEPER_UI_TEST_DIFFICULTY"] = "easy"
     app.launchEnvironment.removeValue(forKey: "MINESWEEPER_UI_TEST_GAME_STATE")
     app.launch()
@@ -730,8 +730,8 @@ final class MinesweeperUITests: XCTestCase {
   func testAllMajorDestinationsOpen() {
     app.buttons["home.quickThemes"].tap()
     XCTAssertTrue(app.staticTexts["Themes"].waitForExistence(timeout: 2))
-    XCTAssertTrue(app.buttons["theme.pink_amoled"].exists)
-    app.buttons["theme.pink_amoled"].tap()
+    XCTAssertTrue(app.buttons["theme.blue_amoled"].exists)
+    app.buttons["theme.blue_amoled"].tap()
     app.buttons["replica.back"].tap()
 
     app.buttons["home.times"].tap()
@@ -742,17 +742,17 @@ final class MinesweeperUITests: XCTestCase {
 
   func testThemeSelectionPersistsAcrossRelaunch() {
     app.buttons["home.quickThemes"].tap()
-    XCTAssertTrue(app.buttons["theme.pink_amoled"].waitForExistence(timeout: 2))
-    app.buttons["theme.pink_amoled"].tap()
-    XCTAssertTrue(app.buttons["theme.pink_amoled"].isSelected)
+    XCTAssertTrue(app.buttons["theme.blue_amoled"].waitForExistence(timeout: 2))
+    app.buttons["theme.blue_amoled"].tap()
+    XCTAssertTrue(app.buttons["theme.blue_amoled"].isSelected)
 
     app.terminate()
     app.launchEnvironment["MINESWEEPER_UI_TEST_RESET"] = "0"
     app.launch()
     XCTAssertTrue(app.buttons["home.quickThemes"].waitForExistence(timeout: 3))
     app.buttons["home.quickThemes"].tap()
-    XCTAssertTrue(app.buttons["theme.pink_amoled"].waitForExistence(timeout: 2))
-    XCTAssertTrue(app.buttons["theme.pink_amoled"].isSelected)
+    XCTAssertTrue(app.buttons["theme.blue_amoled"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["theme.blue_amoled"].isSelected)
   }
 
   func testGameCanRevealFlagPersistAndResume() {
@@ -793,5 +793,51 @@ final class MinesweeperUITests: XCTestCase {
     XCTAssertTrue(app.buttons["home.newGame"].waitForExistence(timeout: 2))
     XCTAssertGreaterThan(window.frame.height, window.frame.width)
     XCUIDevice.shared.orientation = .portrait
+  }
+
+  func testHomeControlsKeepTheirSpacingWithResume() throws {
+    let newGame = app.buttons["home.newGame"]
+    XCTAssertTrue(newGame.waitForExistence(timeout: 5))
+    newGame.tap()
+    let board = app.otherElements["game.board"]
+    XCTAssertTrue(board.waitForExistence(timeout: 5))
+    // A pre-opening flag creates a resumable game without random generation.
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(forDuration: 0.5)
+    app.buttons["game.back"].tap()
+    let resume = app.buttons["home.resume"]
+    XCTAssertTrue(resume.waitForExistence(timeout: 5))
+    let previous = app.buttons["home.previousDifficulty"]
+    XCTAssertGreaterThanOrEqual(newGame.frame.minY - previous.frame.maxY, 8)
+    XCTAssertGreaterThanOrEqual(resume.frame.minY - newGame.frame.maxY, 12)
+    XCTAssertGreaterThanOrEqual(
+      app.buttons["home.settings"].frame.minY - resume.frame.maxY, 12)
+    try capture("polish-home-resume")
+  }
+
+  func testCaptureSelectableThemesAndSettings() throws {
+    for theme in ["material_you_amoled", "amoled", "blue_amoled", "alpine", "aurum", "monokai"] {
+      app.buttons["home.quickThemes"].tap()
+      let choice = app.buttons["theme.\(theme)"]
+      XCTAssertTrue(choice.waitForExistence(timeout: 3))
+      choice.tap()
+      XCTAssertTrue(choice.isSelected)
+      try capture("polish-themes-\(theme)")
+      app.buttons["replica.back"].tap()
+      try capture("polish-home-\(theme)")
+      app.buttons["home.settings"].tap()
+      let dig = app.buttons["settings.primaryAction.dig"]
+      let flag = app.buttons["settings.primaryAction.flag"]
+      if !flag.isHittable { app.swipeUp() }
+      XCTAssertTrue(flag.waitForExistence(timeout: 3))
+      flag.tap()
+      XCTAssertTrue(flag.isSelected)
+      XCTAssertFalse(dig.isSelected)
+      try capture("polish-settings-\(theme)-flag")
+      dig.tap()
+      XCTAssertTrue(dig.isSelected)
+      try capture("polish-settings-\(theme)-dig")
+      app.buttons["replica.back"].tap()
+    }
   }
 }
