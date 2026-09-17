@@ -38,10 +38,21 @@ enum ReplicaMetrics {
 
 @MainActor
 enum ReplicaMotion {
-  /// The reference timings were authored around a 30/60 Hz capture. A slightly
-  /// tighter cadence feels more immediate on-device while ProMotion supplies
-  /// the additional in-between frames instead of making the motion look sped up.
-  private static let polishCadence = 0.82
+  /// The source settles its major camera moves over roughly one second. Keep
+  /// enough time between frames for the motion to read as a continuous glide
+  /// on both 60 Hz and ProMotion displays.
+  private static let polishCadence = 1.15
+
+  static let firstRevealWave = 0.72
+  static let firstFocusDelay = 0.22
+  static let firstFocusDuration = 0.78
+  static let firstControlsDelay = 1.02
+  static let restartTransition = 0.96
+  static let restartControlsDismiss = 0.20
+  static let winGlyphFadeDelay = 0.54
+  static let winGlyphFadeDuration = 0.40
+  static let winResultDelay = 1.22
+  static let replayCoverDuration = 0.74
 
   static func duration(_ base: Double, speedPercent: Double) -> Double {
     guard speedPercent > 0 else { return 0 }
@@ -78,7 +89,7 @@ enum ReplicaMotion {
   }
 
   static var pressFeedback: Animation? {
-    UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.09)
+    UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.13)
   }
 }
 

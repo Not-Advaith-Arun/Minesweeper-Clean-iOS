@@ -24,6 +24,7 @@ struct AppRootView: View {
           switch route {
           case .game(let difficulty, let resume):
             GameView(difficulty: difficulty, resume: resume)
+              .id("\(difficulty.rawValue)-\(resume)")
           case .settings:
             SettingsView()
           case .themes:

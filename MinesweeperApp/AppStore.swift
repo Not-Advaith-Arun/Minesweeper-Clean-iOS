@@ -54,6 +54,9 @@ final class AppStore {
     if environment["MINESWEEPER_UI_TEST_CELL_BORDERS"] == "1" {
       settings.cellBorders = true
     }
+    if let speed = environment["MINESWEEPER_UI_TEST_ANIMATION_SPEED"].flatMap(Double.init) {
+      settings.animationSpeed = min(200, max(0, speed))
+    }
     let previewDifficulty = environment["MINESWEEPER_UI_TEST_DIFFICULTY"]
       .flatMap(ReplicaDifficulty.init(rawValue:)) ?? .medium
     if let requestedDifficulty = environment["MINESWEEPER_UI_TEST_DIFFICULTY"]
@@ -172,8 +175,17 @@ final class AppStore {
 
   func replaceCurrentGame(with difficulty: ReplicaDifficulty) {
     selectedDifficulty = difficulty
-    if case .game = navigation.last { navigation.removeLast() }
-    navigation.append(.game(difficulty, resume: false))
+    if !navigation.isEmpty, case .game = navigation[navigation.count - 1] {
+      var revisedNavigation = navigation
+      revisedNavigation[revisedNavigation.count - 1] = .game(difficulty, resume: false)
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        navigation = revisedNavigation
+      }
+    } else {
+      navigation.append(.game(difficulty, resume: false))
+    }
   }
 
   func registerSavedGame(_ summary: SavedGameSummary?) {

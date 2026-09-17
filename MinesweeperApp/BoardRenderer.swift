@@ -60,6 +60,14 @@ struct BoardPalette {
   let muted: UIColor
   let mine: UIColor
   let clues: [UIColor]
+  let gridLine: UIColor
+
+  var coveredText: UIColor {
+    if background.contrastRatio(with: covered) >= 4.5 { return background }
+    return [foreground, UIColor.black, UIColor.white].max {
+      $0.contrastRatio(with: covered) < $1.contrastRatio(with: covered)
+    } ?? foreground
+  }
 
   var flagGlyph: UIColor {
     // Clean One normally lets the page/background color supply the dark flag
@@ -92,19 +100,27 @@ struct BoardPalette {
     } ?? foreground
   }
 
-  var gridLine: UIColor {
-    // The decoded separator colors are intentionally close to the revealed
-    // surface. Applying another low-alpha blend made them disappear entirely.
-    // Nudge the decoded hue only as far as needed to retain the reference's
-    // quiet cross-like cell separators in every light and dark palette.
-    if separator.contrastRatio(with: surface) >= 1.18 { return separator }
-    let target = foreground.contrastRatio(with: surface)
+  private static func gridLine(
+    surface: UIColor, separator: UIColor, foreground: UIColor, background: UIColor
+  ) -> UIColor {
+    // Reference separators sit quietly behind the clues. Some custom themes
+    // use their text-muted color as a fallback separator; drawing it at full
+    // strength creates a high-contrast wire grid across an AMOLED board.
+    let neutral = foreground.contrastRatio(with: surface)
       >= background.contrastRatio(with: surface) ? foreground : background
-    for amount in stride(from: CGFloat(0.04), through: 0.28, by: 0.04) {
-      let candidate = separator.interpolated(to: target, progress: amount)
-      if candidate.contrastRatio(with: surface) >= 1.18 { return candidate }
+    let target = separator.contrastRatio(with: surface) >= 1.22 ? separator : neutral
+    var lower: CGFloat = 0
+    var upper: CGFloat = 1
+    for _ in 0..<12 {
+      let midpoint = (lower + upper) / 2
+      let candidate = surface.interpolated(to: target, progress: midpoint)
+      if candidate.contrastRatio(with: surface) < 1.22 {
+        lower = midpoint
+      } else {
+        upper = midpoint
+      }
     }
-    return separator.interpolated(to: target, progress: 0.28)
+    return surface.interpolated(to: target, progress: upper)
   }
 
   init(theme: AppTheme) {
@@ -118,6 +134,8 @@ struct BoardPalette {
     muted = UIColor(theme.muted)
     mine = UIColor(theme.mine)
     clues = theme.clueColors.map(UIColor.init)
+    gridLine = Self.gridLine(
+      surface: surface, separator: separator, foreground: foreground, background: background)
   }
 
   func matches(_ other: BoardPalette) -> Bool {
@@ -163,6 +181,8 @@ struct BoardPalette {
     self.muted = muted
     self.mine = mine
     self.clues = clues
+    self.gridLine = Self.gridLine(
+      surface: surface, separator: separator, foreground: foreground, background: background)
   }
 }
 
@@ -203,14 +223,34 @@ private extension UIColor {
 }
 
 final class BoardViewport: UIScrollView, UIScrollViewDelegate {
+  private enum CameraAnimationKind {
+    case focus
+    case restart
+  }
+
+  private struct CameraAnimationState {
+    let kind: CameraAnimationKind
+    let startedAt: CFTimeInterval
+    let duration: CFTimeInterval
+    let startZoom: CGFloat
+    let targetZoom: CGFloat
+    let startOffset: CGPoint
+    let targetOffset: CGPoint
+    let startInset: UIEdgeInsets
+    let targetInset: UIEdgeInsets
+  }
+
   let canvas = BoardCanvasView()
   private var lastGridSize = CGSize.zero
   private var lastPhase: ReplicaGamePhase = .ready
   private var hasAppliedInitialZoom = false
   private var pendingFocusCoordinate: CellCoordinate?
   private var focusWorkItem: DispatchWorkItem?
-  private var focusAnimator: UIViewPropertyAnimator?
+  private var cameraAnimation: CameraAnimationState?
+  private var cameraDisplayLink: CADisplayLink?
+  private var isRestartCameraPending = false
   private var terminalWorkItem: DispatchWorkItem?
+  private var pendingTerminalFrameAnimated: Bool?
   private var isHoldingRevealTransform = false
   private var isTerminalFramed = false
 
@@ -230,6 +270,17 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
 
   required init?(coder: NSCoder) { nil }
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window == nil else { return }
+    focusWorkItem?.cancel()
+    focusWorkItem = nil
+    terminalWorkItem?.cancel()
+    terminalWorkItem = nil
+    pendingTerminalFrameAnimated = nil
+    stopCameraAnimation()
+  }
+
   func update(
     board: BoardPresentation,
     phase: ReplicaGamePhase,
@@ -248,7 +299,8 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       width: CGFloat(board.columns) * BoardCanvasView.baseCellSize,
       height: CGFloat(board.rows) * BoardCanvasView.baseCellSize
     )
-    if gridSize != lastGridSize {
+    let gridSizeChanged = gridSize != lastGridSize
+    if gridSizeChanged {
       lastGridSize = gridSize
       canvas.frame = CGRect(origin: .zero, size: gridSize)
       contentSize = gridSize
@@ -256,33 +308,36 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     }
     let previousPhase = lastPhase
     if previousPhase != .ready, phase == .ready {
-      // A new game can reuse the same board dimensions. Reset the viewport even
-      // when `gridSize` did not change, otherwise the ready slab inherits the
-      // previous round's zoom and pan position and its angled ends are clipped.
       focusWorkItem?.cancel()
-      focusAnimator?.stopAnimation(true)
-      focusAnimator = nil
+      stopCameraAnimation()
       terminalWorkItem?.cancel()
+      pendingTerminalFrameAnimated = nil
       pendingFocusCoordinate = nil
       isHoldingRevealTransform = false
       isTerminalFramed = false
-      hasAppliedInitialZoom = false
-      contentOffset = CGPoint(x: -contentInset.left, y: -contentInset.top)
+      let animateRestart = !gridSizeChanged
+        && animationSpeed > 0
+        && !UIAccessibility.isReduceMotionEnabled
+      if animateRestart {
+        // Keep the completed board's camera until the canvas has captured it,
+        // then glide camera and slab to their ready framing on one timeline.
+        isRestartCameraPending = true
+      } else {
+        isRestartCameraPending = false
+        hasAppliedInitialZoom = false
+        contentOffset = CGPoint(x: -contentInset.left, y: -contentInset.top)
+      }
     }
     if previousPhase == .ready, phase == .playing {
+      stopCameraAnimation()
+      isRestartCameraPending = false
       pendingFocusCoordinate = actionCoordinate
       isHoldingRevealTransform = true
       focusWorkItem?.cancel()
-      focusAnimator?.stopAnimation(true)
-      focusAnimator = nil
-      if bounds.width > 0 {
-        let revealScale = bounds.width / gridSize.width * 0.79
-        setZoomScale(revealScale, animated: false)
-        hasAppliedInitialZoom = true
-      }
     }
     if !previousPhase.isFinished, phase.isFinished {
       focusWorkItem?.cancel()
+      stopCameraAnimation(kind: .focus)
       isHoldingRevealTransform = false
       terminalWorkItem?.cancel()
       // Loss keeps the action capsule on-screen while mines radiate outward,
@@ -291,13 +346,19 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       let baseDelay = phase == .won ? 0.68 : 0.40
       let delay = animationSpeed > 0 && !UIAccessibility.isReduceMotionEnabled
         ? ReplicaMotion.duration(baseDelay, speedPercent: animationSpeed) : 0
-      let work = DispatchWorkItem { [weak self] in self?.applyTerminalFrame(animated: delay > 0) }
+      let work = DispatchWorkItem { [weak self] in
+        self?.terminalWorkItem = nil
+        self?.applyTerminalFrame(animated: delay > 0)
+      }
       terminalWorkItem = work
       DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     } else if previousPhase.isFinished, !phase.isFinished {
       terminalWorkItem?.cancel()
       isTerminalFramed = false
-      hasAppliedInitialZoom = false
+      // The pending restart must begin at the completed board's current
+      // scale. Resetting this flag here would snap to readyScale during the
+      // next layout, before the camera has a chance to interpolate it.
+      if !isRestartCameraPending { hasAppliedInitialZoom = false }
     }
     lastPhase = phase
     canvas.update(
@@ -314,6 +375,27 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       isReplayCovering: isReplayCovering,
       replayCoverSequence: replayCoverSequence
     )
+    if animationSpeed <= 0 || UIAccessibility.isReduceMotionEnabled {
+      if let animation = cameraAnimation {
+        stopCameraAnimation()
+        applyCameraFrame(
+          zoom: animation.targetZoom,
+          offset: animation.targetOffset,
+          inset: animation.targetInset
+        )
+        finishCameraAnimation(kind: animation.kind, targetZoom: animation.targetZoom)
+      }
+      if let focusWorkItem {
+        focusWorkItem.perform()
+        focusWorkItem.cancel()
+        self.focusWorkItem = nil
+      }
+      if terminalWorkItem != nil {
+        terminalWorkItem?.cancel()
+        terminalWorkItem = nil
+        applyTerminalFrame(animated: false)
+      }
+    }
     setNeedsLayout()
   }
 
@@ -328,9 +410,17 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
       bounds.width * 0.66 / lastGridSize.width,
       bounds.height * 0.545 / lastGridSize.height
     )
+    // Large boards fit below the normal playing zoom floor. Preserve that
+    // opening scale until the reveal and its following focus glide finish.
     minimumZoomScale = lastPhase == .ready
-      ? readyScale
-      : (lastPhase.isFinished ? min(0.65, terminalScale) : 0.65)
+      ? (isRestartCameraPending || cameraAnimation?.kind == .restart
+        ? min(readyScale, zoomScale)
+        : readyScale)
+      : (lastPhase.isFinished
+        ? min(0.65, terminalScale)
+        : (isHoldingRevealTransform || cameraAnimation?.kind == .focus
+          ? min(0.65, zoomScale)
+          : 0.65))
     maximumZoomScale = max(minimumZoomScale, 3.5)
     if !hasAppliedInitialZoom {
       zoomScale = lastPhase == .ready
@@ -340,13 +430,21 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     } else if zoomScale < minimumZoomScale {
       zoomScale = minimumZoomScale
     }
-    centerContent()
+    if !isRestartCameraPending, cameraAnimation == nil {
+      centerContent()
+    }
+    applyPendingRestartCameraIfNeeded(readyScale: readyScale)
     applyPendingFocusIfNeeded()
+    if let animated = pendingTerminalFrameAnimated {
+      applyTerminalFrame(animated: animated)
+    }
   }
 
   func viewForZooming(in scrollView: UIScrollView) -> UIView? { canvas }
 
-  func scrollViewDidZoom(_ scrollView: UIScrollView) { centerContent() }
+  func scrollViewDidZoom(_ scrollView: UIScrollView) {
+    if cameraAnimation == nil { centerContent() }
+  }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { cancelPendingFocus() }
 
@@ -355,8 +453,16 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
   }
 
   private func centerContent() {
-    let horizontal = max(0, (bounds.width - contentSize.width) / 2)
-    let spareVertical = max(0, bounds.height - contentSize.height)
+    contentInset = calculatedContentInset(at: zoomScale)
+  }
+
+  private func calculatedContentInset(at scale: CGFloat) -> UIEdgeInsets {
+    let scaledContentSize = CGSize(
+      width: lastGridSize.width * scale,
+      height: lastGridSize.height * scale
+    )
+    let horizontal = max(0, (bounds.width - scaledContentSize.width) / 2)
+    let spareVertical = max(0, bounds.height - scaledContentSize.height)
     let targetCenterY: CGFloat? = if lastPhase == .ready || isHoldingRevealTransform {
       bounds.height * 0.54
     } else if isTerminalFramed {
@@ -367,26 +473,51 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     } else {
       nil
     }
-    let vertical = targetCenterY.map { max(0, $0 - contentSize.height / 2) }
+    let vertical = targetCenterY.map { max(0, $0 - scaledContentSize.height / 2) }
       ?? spareVertical / 2
-    // Once zoomed, keep a deliberate scroll tail below the canvas. Players
-    // can lift the board's bottom edge by roughly the lower third of the
-    // viewport instead of having it hard-stop against the screen edge.
-    let zoomedPanTail = lastPhase == .playing
-      && !isHoldingRevealTransform
-      && zoomScale > minimumZoomScale * 1.04
-      ? bounds.height * 0.34
-      : 0
-    let bottom = max(0, spareVertical - vertical) + zoomedPanTail
-    contentInset = UIEdgeInsets(
-      top: vertical, left: horizontal, bottom: bottom, right: horizontal)
+    // Give every edge the same deliberate scroll tail. The inset is stable for
+    // the whole playing phase, so it cannot switch on halfway through the
+    // first-focus animation and kick the canvas to a new offset.
+    let hasPanTail = lastPhase == .playing && !isHoldingRevealTransform
+    let horizontalPanTail = hasPanTail ? bounds.width * 0.34 : 0
+    let verticalPanTail = hasPanTail ? bounds.height * 0.34 : 0
+    let bottom = max(0, spareVertical - vertical) + verticalPanTail
+    return UIEdgeInsets(
+      top: vertical + verticalPanTail,
+      left: horizontal + horizontalPanTail,
+      bottom: bottom,
+      right: horizontal + horizontalPanTail
+    )
+  }
+
+  private func applyPendingRestartCameraIfNeeded(readyScale: CGFloat) {
+    guard isRestartCameraPending, lastPhase == .ready else { return }
+    isRestartCameraPending = false
+    let speed = canvas.animationSpeedPercent
+    let targetInset = calculatedContentInset(at: readyScale)
+    let targetOffset = CGPoint(x: -targetInset.left, y: -targetInset.top)
+    guard speed > 0, !UIAccessibility.isReduceMotionEnabled else {
+      applyCameraFrame(zoom: readyScale, offset: targetOffset, inset: targetInset)
+      minimumZoomScale = readyScale
+      return
+    }
+    startCameraAnimation(
+      kind: .restart,
+      targetZoom: readyScale,
+      targetOffset: targetOffset,
+      targetInset: targetInset,
+      duration: ReplicaMotion.duration(
+        ReplicaMotion.restartTransition,
+        speedPercent: speed
+      )
+    )
   }
 
   private func applyPendingFocusIfNeeded() {
     guard let coordinate = pendingFocusCoordinate, bounds.width > 0, bounds.height > 0 else { return }
     pendingFocusCoordinate = nil
-    // The Android reference reveals at the fit-to-board scale, then settles at
-    // roughly eight visible columns after the clearing wave has completed.
+    // Begin at the fitted scale, then glide toward roughly eight visible
+    // columns while the opening tiles finish contracting.
     let targetZoom = max(minimumZoomScale, min(maximumZoomScale, 1.29))
     let center = CGPoint(
       x: (CGFloat(coordinate.column) + 0.5) * BoardCanvasView.baseCellSize,
@@ -394,43 +525,47 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     )
     let focusDelay = UIAccessibility.isReduceMotionEnabled || canvas.animationSpeedPercent == 0
       ? 0
-      : ReplicaMotion.duration(0.66, speedPercent: canvas.animationSpeedPercent)
+      : ReplicaMotion.duration(
+        ReplicaMotion.firstFocusDelay,
+        speedPercent: canvas.animationSpeedPercent
+      )
     let work = DispatchWorkItem { [weak self] in
       guard let self else { return }
+      self.focusWorkItem = nil
       self.isHoldingRevealTransform = false
-      self.centerContent()
-      let focusSize = CGSize(
-        width: self.bounds.width / targetZoom,
-        height: self.bounds.height / targetZoom
+      let targetOffset = CGPoint(
+        x: center.x * targetZoom - self.bounds.width / 2,
+        y: center.y * targetZoom - self.bounds.height / 2
       )
-      let maxOriginX = max(0, self.lastGridSize.width - focusSize.width)
-      let maxOriginY = max(0, self.lastGridSize.height - focusSize.height)
-      let focusRect = CGRect(
-        x: min(max(0, center.x - focusSize.width / 2), maxOriginX),
-        y: min(max(0, center.y - focusSize.height / 2), maxOriginY),
-        width: focusSize.width,
-        height: focusSize.height
+      let targetInset = self.calculatedContentInset(at: targetZoom)
+      let targetContentSize = CGSize(
+        width: self.lastGridSize.width * targetZoom,
+        height: self.lastGridSize.height * targetZoom
+      )
+      let boundedTargetOffset = self.boundedOffset(
+        targetOffset,
+        contentSize: targetContentSize,
+        inset: targetInset
       )
       let animated = !UIAccessibility.isReduceMotionEnabled && self.canvas.animationSpeedPercent > 0
       guard animated else {
-        self.zoom(to: focusRect, animated: false)
+        self.applyCameraFrame(
+          zoom: targetZoom,
+          offset: boundedTargetOffset,
+          inset: targetInset
+        )
         return
       }
-      let animator = UIViewPropertyAnimator(
+      self.startCameraAnimation(
+        kind: .focus,
+        targetZoom: targetZoom,
+        targetOffset: boundedTargetOffset,
+        targetInset: targetInset,
         duration: ReplicaMotion.duration(
-          0.36,
+          ReplicaMotion.firstFocusDuration,
           speedPercent: self.canvas.animationSpeedPercent
-        ),
-        curve: .easeInOut
-      ) {
-        // Running the scroll view's transform inside one UIKit animator keeps
-        // the first-focus camera on the native refresh cadence while allowing
-        // the global speed slider to control this track as well.
-        self.zoom(to: focusRect, animated: false)
-      }
-      self.focusAnimator = animator
-      animator.addCompletion { [weak self] _ in self?.focusAnimator = nil }
-      animator.startAnimation()
+        )
+      )
     }
     focusWorkItem = work
     DispatchQueue.main.asyncAfter(deadline: .now() + focusDelay, execute: work)
@@ -439,19 +574,24 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
   private func cancelPendingFocus() {
     focusWorkItem?.cancel()
     focusWorkItem = nil
-    focusAnimator?.stopAnimation(true)
-    focusAnimator = nil
+    let wasAnimatingFocus = cameraAnimation?.kind == .focus
+    stopCameraAnimation(kind: .focus)
     pendingFocusCoordinate = nil
     if isHoldingRevealTransform {
       isHoldingRevealTransform = false
+      centerContent()
+    } else if wasAnimatingFocus {
       centerContent()
     }
   }
 
   private func applyTerminalFrame(animated: Bool) {
-    guard bounds.width > 0, bounds.height > 0, lastGridSize.width > 0, lastPhase.isFinished else {
+    guard lastPhase.isFinished else { return }
+    guard bounds.width > 0, bounds.height > 0, lastGridSize.width > 0 else {
+      pendingTerminalFrameAnimated = animated
       return
     }
+    pendingTerminalFrameAnimated = nil
     isTerminalFramed = true
     let scale = min(
       1.15,
@@ -481,11 +621,106 @@ final class BoardViewport: UIScrollView, UIScrollViewDelegate {
     }
   }
 
-  private func boundedOffset(_ offset: CGPoint) -> CGPoint {
-    let minX = -contentInset.left
-    let minY = -contentInset.top
-    let maxX = max(minX, contentSize.width - bounds.width + contentInset.right)
-    let maxY = max(minY, contentSize.height - bounds.height + contentInset.bottom)
+  private func startCameraAnimation(
+    kind: CameraAnimationKind,
+    targetZoom: CGFloat,
+    targetOffset: CGPoint,
+    targetInset: UIEdgeInsets,
+    duration: CFTimeInterval
+  ) {
+    stopCameraAnimation()
+    guard duration > 0, window != nil else {
+      applyCameraFrame(zoom: targetZoom, offset: targetOffset, inset: targetInset)
+      finishCameraAnimation(kind: kind, targetZoom: targetZoom)
+      return
+    }
+    cameraAnimation = CameraAnimationState(
+      kind: kind,
+      startedAt: CACurrentMediaTime(),
+      duration: duration,
+      startZoom: zoomScale,
+      targetZoom: targetZoom,
+      startOffset: contentOffset,
+      targetOffset: targetOffset,
+      startInset: contentInset,
+      targetInset: targetInset
+    )
+    let displayLink = CADisplayLink(target: self, selector: #selector(stepCameraAnimation(_:)))
+    displayLink.preferredFrameRateRange = CAFrameRateRange(
+      minimum: 60,
+      maximum: 120,
+      preferred: 120
+    )
+    cameraDisplayLink = displayLink
+    displayLink.add(to: .main, forMode: .common)
+  }
+
+  @objc private func stepCameraAnimation(_ displayLink: CADisplayLink) {
+    guard let animation = cameraAnimation else {
+      stopCameraAnimation()
+      return
+    }
+    let linearProgress = CGFloat(
+      min(1, max(0, (displayLink.targetTimestamp - animation.startedAt) / animation.duration))
+    )
+    // Quintic smootherstep has zero velocity and acceleration at both ends,
+    // avoiding the tiny hitch visible when a scroll view animation hands back
+    // to direct manipulation.
+    let easedProgress = linearProgress * linearProgress * linearProgress
+      * (linearProgress * (linearProgress * 6 - 15) + 10)
+    func interpolate(_ start: CGFloat, _ end: CGFloat) -> CGFloat {
+      start + (end - start) * easedProgress
+    }
+    let zoom = interpolate(animation.startZoom, animation.targetZoom)
+    let offset = CGPoint(
+      x: interpolate(animation.startOffset.x, animation.targetOffset.x),
+      y: interpolate(animation.startOffset.y, animation.targetOffset.y)
+    )
+    let inset = UIEdgeInsets(
+      top: interpolate(animation.startInset.top, animation.targetInset.top),
+      left: interpolate(animation.startInset.left, animation.targetInset.left),
+      bottom: interpolate(animation.startInset.bottom, animation.targetInset.bottom),
+      right: interpolate(animation.startInset.right, animation.targetInset.right)
+    )
+    applyCameraFrame(zoom: zoom, offset: offset, inset: inset)
+    guard linearProgress >= 1 else { return }
+    stopCameraAnimation()
+    finishCameraAnimation(kind: animation.kind, targetZoom: animation.targetZoom)
+  }
+
+  private func applyCameraFrame(zoom: CGFloat, offset: CGPoint, inset: UIEdgeInsets) {
+    setZoomScale(zoom, animated: false)
+    contentInset = inset
+    contentOffset = offset
+  }
+
+  private func finishCameraAnimation(kind: CameraAnimationKind, targetZoom: CGFloat) {
+    if kind == .restart, lastPhase == .ready {
+      minimumZoomScale = targetZoom
+      maximumZoomScale = max(targetZoom, 3.5)
+      hasAppliedInitialZoom = true
+    }
+    setNeedsLayout()
+  }
+
+  private func stopCameraAnimation(kind: CameraAnimationKind? = nil) {
+    if let kind, cameraAnimation?.kind != kind { return }
+    cameraDisplayLink?.invalidate()
+    cameraDisplayLink = nil
+    cameraAnimation = nil
+  }
+
+  private func boundedOffset(
+    _ offset: CGPoint,
+    contentSize: CGSize? = nil,
+    inset: UIEdgeInsets? = nil
+  ) -> CGPoint {
+    let effectiveContentSize = contentSize ?? self.contentSize
+    let effectiveInset = inset ?? contentInset
+    let minX = -effectiveInset.left
+    let minY = -effectiveInset.top
+    let maxX = max(minX, effectiveContentSize.width - bounds.width + effectiveInset.right)
+    let maxY = max(minY, effectiveContentSize.height - bounds.height + effectiveInset.bottom)
     return CGPoint(
       x: min(max(offset.x, minX), maxX),
       y: min(max(offset.y, minY), maxY)
@@ -515,6 +750,8 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   private var initialRevealDuration: CFTimeInterval = 0
   private var initialRevealOrigin: CGPoint?
   private var initialRevealFixedStartCoordinate: CellCoordinate?
+  private var winGlyphFadeStartedAt: CFTimeInterval?
+  private var winGlyphOpacity: CGFloat = 1
   private var restartSnapshot: UIImage?
   private var restartStartedAt: CFTimeInterval?
   private var restartDuration: CFTimeInterval = 0
@@ -530,6 +767,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   private var previousAnimatingRevealIndices: Set<Int> = []
   private var wasInvalidatingFullCanvas = false
   private var previousLoadingPulseRect: CGRect?
+  private var previousInitialRevealOverlayRect: CGRect?
   private var displayLink: CADisplayLink?
   // Every cell in a rendered frame must observe exactly the same animation
   // time. Sampling CACurrentMediaTime() independently for connected neighbors
@@ -565,6 +803,19 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   }
 
   required init?(coder: NSCoder) { nil }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      // CADisplayLink retains its target. Invalidate when navigation removes
+      // the canvas, including while a slow opening is still being prepared.
+      displayLink?.invalidate()
+      displayLink = nil
+    } else {
+      maintainDisplayLink()
+      setNeedsDisplay()
+    }
+  }
 
   func update(
     board: BoardPresentation,
@@ -611,9 +862,17 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     self.isFixedStartEnabled = isFixedStartEnabled
     self.showsBorders = showsBorders
     self.animationSpeed = animationSpeed
+    let allowsMotion = animationSpeed > 0 && !UIAccessibility.isReduceMotionEnabled
     let now = CACurrentMediaTime()
     if appearanceChanged { cachedPlayingBoardImage = nil }
-    if isLoading, phase == .ready, let actionCoordinate,
+    if phase == .won, oldPhase != .won {
+      winGlyphFadeStartedAt = allowsMotion ? now : nil
+      winGlyphOpacity = allowsMotion ? 1 : 0
+    } else if phase != .won {
+      winGlyphFadeStartedAt = nil
+      winGlyphOpacity = 1
+    }
+    if allowsMotion, isLoading, phase == .ready, let actionCoordinate,
       !wasLoading || loadingPulseOrigin == nil
     {
       loadingPulseStartedAt = now
@@ -621,16 +880,16 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         x: (CGFloat(actionCoordinate.column) + 0.5) * Self.baseCellSize,
         y: (CGFloat(actionCoordinate.row) + 0.5) * Self.baseCellSize
       )
-    } else if !isLoading || phase != .ready {
+    } else if !allowsMotion || !isLoading || phase != .ready {
       loadingPulseStartedAt = nil
       loadingPulseOrigin = nil
     }
-    if isReplayCovering,
+    if allowsMotion, isReplayCovering,
       (!self.isReplayCovering || self.replayCoverSequence != replayCoverSequence)
     {
       replayCoverStartedAt = now
-      replayCoverDuration = 0.92 * Self.durationScale(for: animationSpeed)
-    } else if !isReplayCovering {
+      replayCoverDuration = ReplicaMotion.replayCoverDuration * Self.durationScale(for: animationSpeed)
+    } else if !allowsMotion || !isReplayCovering {
       replayCoverStartedAt = nil
       replayCoverDuration = 0
     }
@@ -641,7 +900,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     if let pendingRestartSnapshot {
       restartSnapshot = pendingRestartSnapshot
       restartStartedAt = now
-      restartDuration = 0.88 * distanceScale
+      restartDuration = ReplicaMotion.restartTransition * distanceScale
     } else if phase != .ready {
       restartSnapshot = nil
       restartStartedAt = nil
@@ -661,33 +920,69 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       let actionCoordinate
     {
       initialRevealStartedAt = now
-      initialRevealDuration = 0.62 * distanceScale
+      initialRevealDuration = ReplicaMotion.firstRevealWave * distanceScale
       initialRevealOrigin = CGPoint(
         x: (CGFloat(actionCoordinate.column) + 0.5) * Self.baseCellSize,
         y: (CGFloat(actionCoordinate.row) + 0.5) * Self.baseCellSize
       )
       initialRevealFixedStartCoordinate = oldFixedStartCoordinate
+      previousInitialRevealOverlayRect = initialRevealOverlayBounds
     } else if phase == .ready {
       initialRevealStartedAt = nil
       initialRevealOrigin = nil
       initialRevealDuration = 0
       initialRevealFixedStartCoordinate = nil
     }
-    for coordinate in changedCoordinates {
+    if !allowsMotion {
+      // Animation Off and Reduce Motion finish the current visual operation
+      // immediately, even when the preference changes halfway through it.
+      revealStartedAt.removeAll(keepingCapacity: true)
+      revealDurations.removeAll(keepingCapacity: true)
+      initialRevealStartedAt = nil
+      initialRevealOrigin = nil
+      initialRevealDuration = 0
+      initialRevealFixedStartCoordinate = nil
+      restartSnapshot = nil
+      restartStartedAt = nil
+      restartDuration = 0
+      self.palette = targetPalette
+      paletteTransitionFrom = nil
+      paletteTransitionStartedAt = nil
+      cachedPlayingBoardImage = nil
+      winGlyphFadeStartedAt = nil
+      winGlyphOpacity = phase == .won ? 0 : 1
+    }
+    let openingMaximumDistance: Double = if startsInitialReveal, let actionCoordinate {
+      changedCoordinates.map { coordinate in
+        hypot(
+          Double(coordinate.column - actionCoordinate.column),
+          Double(coordinate.row - actionCoordinate.row)
+        )
+      }.max() ?? 0
+    } else {
+      0
+    }
+    let openingStagger = min(0.24, openingMaximumDistance * 0.018)
+    for coordinate in changedCoordinates where allowsMotion {
       let index = coordinate.row * board.columns + coordinate.column
       guard board.cells.indices.contains(index) else { continue }
       if oldBoard.cells.indices.contains(index), oldBoard.cells[index] != board.cells[index] {
-        // The first opening is one continuous touch-origin surface wipe. Its
-        // final topology is rendered underneath the old ready slab, so adding
-        // per-cell clearing overlays here would reintroduce the checkerboard
-        // intermediate that the global mask is specifically replacing.
-        if startsInitialReveal { continue }
         let delay: Double
         let participatesInLossWave: Bool = switch board.cells[index] {
         case .mine, .flaggedMine: true
         case .covered, .revealed, .flagged, .wrongFlag: false
         }
-        if phase == .lost, participatesInLossWave, let actionCoordinate {
+        if startsInitialReveal, let actionCoordinate {
+          // Both native Android captures and recent gameplay show a mosaic
+          // only inside the opening region: seams appear, then rounded tiles
+          // shrink to dots. A radial stagger carries that change from touch.
+          let distance = hypot(
+            Double(coordinate.column - actionCoordinate.column),
+            Double(coordinate.row - actionCoordinate.row)
+          )
+          delay = openingMaximumDistance > 0
+            ? distance / openingMaximumDistance * openingStagger : 0
+        } else if phase == .lost, participatesInLossWave, let actionCoordinate {
           let dx = Double(coordinate.column - actionCoordinate.column)
           let dy = Double(coordinate.row - actionCoordinate.row)
           let radial = hypot(dx, dy) * 0.023
@@ -715,7 +1010,8 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         case .mine:
           revealDurations[index] = 0.08 * distanceScale
         case .covered, .revealed:
-          revealDurations[index] = 0.24 * distanceScale
+          revealDurations[index] = (startsInitialReveal
+            ? ReplicaMotion.firstRevealWave - openingStagger : 0.24) * distanceScale
         }
       }
     }
@@ -738,6 +1034,12 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         CGPoint(x: bounds.midX, y: bounds.midY),
         to: nil
       )
+    }
+    accessibilityValue = switch phase {
+    case .ready: isLoading ? "Preparing" : "Ready"
+    case .playing: "Playing"
+    case .won: "Won"
+    case .lost: "Lost"
     }
     maintainDisplayLink()
     setNeedsDisplay()
@@ -823,11 +1125,26 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         )
       }
     }
-    drawConcaveCoverCutouts(
+    drawConcaveRegionCorners(
       firstColumn: firstColumn,
       lastColumn: lastColumn,
       firstRow: firstRow,
-      lastRow: lastRow
+      lastRow: lastRow,
+      radius: Self.baseCellSize * 0.09,
+      fillColor: palette.covered,
+      matches: { [self] column, row in
+        visuallyCovered(column: column, row: row)
+      },
+      permitsMissingQuadrant: { [self] column, row in
+        visuallyRevealed(column: column, row: row)
+      }
+    )
+    drawCoveredCellBorders(
+      firstColumn: firstColumn,
+      lastColumn: lastColumn,
+      firstRow: firstRow,
+      lastRow: lastRow,
+      context: context
     )
     drawFlagRegions(
       firstColumn: firstColumn,
@@ -846,6 +1163,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   private var shouldUseCachedPlayingBoard: Bool {
     revealStartedAt.isEmpty
       && paletteTransitionStartedAt == nil
+      && winGlyphFadeStartedAt == nil
       && (initialRevealStartedAt != nil || isReplayCovering)
   }
 
@@ -947,11 +1265,39 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       break
     }
 
-    if showsBorders {
-      context.setStrokeColor(palette.separator.cgColor)
-      context.setLineWidth(0.7)
-      context.stroke(inset)
+  }
+
+  private func drawCoveredCellBorders(
+    firstColumn: Int,
+    lastColumn: Int,
+    firstRow: Int,
+    lastRow: Int,
+    context: CGContext
+  ) {
+    guard showsBorders, winGlyphOpacity > 0 else { return }
+    // Draw after the connected covered surface; painting these in drawCell
+    // lets the later union fill erase every border again.
+    context.saveGState()
+    context.setAlpha(winGlyphOpacity)
+    context.setStrokeColor(palette.separator.cgColor)
+    context.setLineWidth(0.7)
+    for row in firstRow...lastRow {
+      for column in firstColumn...lastColumn {
+        switch board[column, row] {
+        case .covered, .mine(triggered: false):
+          let rect = cellRect(column: column, row: row).insetBy(dx: 0.55, dy: 0.55)
+          let path = UIBezierPath(
+            roundedRect: rect,
+            cornerRadius: Self.baseCellSize * 0.09 - 0.55
+          )
+          context.addPath(path.cgPath)
+        case .revealed, .flagged, .flaggedMine, .mine(triggered: true), .wrongFlag:
+          continue
+        }
+      }
     }
+    context.strokePath()
+    context.restoreGState()
   }
 
   /// Flags replace covered cells with a muted inset surface surrounded by a
@@ -1000,6 +1346,15 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         )
       }
     }
+    drawConcaveRegionCorners(
+      firstColumn: firstColumn,
+      lastColumn: lastColumn,
+      firstRow: firstRow,
+      lastRow: lastRow,
+      radius: radius,
+      fillColor: palette.surface,
+      matches: { [self] column, row in isFlagLike(column: column, row: row) }
+    )
     // Inset flagged surface. Unlike covered cells, flags merge only across a
     // shared horizontal or vertical edge; diagonal flags remain distinct.
     palette.flagged.setFill()
@@ -1017,6 +1372,16 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         )
       }
     }
+    drawConcaveRegionCorners(
+      firstColumn: firstColumn,
+      lastColumn: lastColumn,
+      firstRow: firstRow,
+      lastRow: lastRow,
+      radius: radius + tileInset,
+      boundaryInset: tileInset,
+      fillColor: palette.flagged,
+      matches: { [self] column, row in isFlagLike(column: column, row: row) }
+    )
     // Glyphs and the short placement morph sit above the completed topology.
     for row in firstRow...lastRow {
       for column in firstColumn...lastColumn where isFlagLike(column: column, row: row) {
@@ -1063,12 +1428,10 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
             scaleY: flagGlyphScaleY
           )
         }
-        if showsBorders {
-          guard let context = UIGraphicsGetCurrentContext() else { continue }
-          context.setStrokeColor(palette.separator.cgColor)
-          context.setLineWidth(0.7)
-          context.stroke(rect.insetBy(dx: 0.55, dy: 0.55))
-        }
+        // A merged flag cluster is one continuous visual surface. Restroking
+        // each flagged cell here draws square per-cell edges after the rounded
+        // topology pass, leaving a faint rectangular outline outside concave
+        // curves when cell borders are enabled.
       }
     }
   }
@@ -1117,7 +1480,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       // Medium and the taller boards instead of making it huge on Easy.
       .font: UIFont(name: "Rubik-Regular", size: rect.width * 0.045)
         ?? UIFont.systemFont(ofSize: rect.width * 0.045, weight: .regular),
-      .foregroundColor: palette.background.withAlphaComponent(0.56 * alpha),
+      .foregroundColor: palette.coveredText.withAlphaComponent(alpha),
     ]
     let prompt: String
     let effectiveFixedStart = fixedStartCoordinate ?? initialRevealFixedStartCoordinate
@@ -1229,10 +1592,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     context.restoreGState()
   }
 
-  /// Reveals the already-composited final board through one circular wave
-  /// centered on the first touch. Intersecting that wave with the final cell
-  /// topology yields the same connected growing landmass as the reference;
-  /// cells that remain covered simply stay covered beneath the mask.
+  /// Keeps the ready prompt and touch acknowledgement above the per-cell
+  /// opening mosaic. The cells themselves clear in drawClearingOverlay, so
+  /// the surrounding covered slab remains connected throughout the reveal.
   private func drawInitialRevealOverlay(context: CGContext) {
     guard let startedAt = initialRevealStartedAt,
       let origin = initialRevealOrigin,
@@ -1243,40 +1605,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     let progress = CGFloat(min(1, max(0, elapsed / initialRevealDuration)))
     guard progress < 1 else { return }
 
-    // Hold for just over one display frame so the press reads before the
-    // surface begins opening, then grow the radius smoothly to the farthest
-    // board corner.
-    let waveDelay: CGFloat = 0.07
-    let waveProgress = Self.smoothStep(
-      min(1, max(0, (progress - waveDelay) / (1 - waveDelay)))
-    )
-    let corners = [
-      CGPoint(x: bounds.minX, y: bounds.minY),
-      CGPoint(x: bounds.maxX, y: bounds.minY),
-      CGPoint(x: bounds.minX, y: bounds.maxY),
-      CGPoint(x: bounds.maxX, y: bounds.maxY),
-    ]
-    let maximumRadius = corners.map { hypot($0.x - origin.x, $0.y - origin.y) }.max()
-      ?? hypot(bounds.width, bounds.height)
-    let revealRadius = (maximumRadius + Self.baseCellSize * 0.12) * waveProgress
-
-    context.saveGState()
-    let remainingSlab = UIBezierPath(rect: bounds)
-    remainingSlab.append(UIBezierPath(
-      ovalIn: CGRect(
-        x: origin.x - revealRadius,
-        y: origin.y - revealRadius,
-        width: revealRadius * 2,
-        height: revealRadius * 2
-      )
-    ))
-    context.addPath(remainingSlab.cgPath)
-    context.clip(using: .evenOdd)
-    drawReadySlab(in: bounds)
-    context.restoreGState()
-
-    // The ready prompt remains stable during the earliest part of the wave,
-    // then fades as the opening reaches the middle of the board.
+    // Fade the prompt while the first seams open beneath it.
     let promptProgress = Self.smoothStep(min(1, progress / 0.62))
     drawReadyPrompt(in: bounds, alpha: 1 - promptProgress)
 
@@ -1333,10 +1662,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     context.restoreGState()
   }
 
-  /// Fades the completed board into the background, introduces the compact
-  /// center pulse visible in the source, then grows the fresh ready slab from
-  /// that point. Keeping all three stages in the canvas avoids a one-frame
-  /// jump through the fully-sized ready board when the session is replaced.
+  /// Crossfades the completed board into one aspect-preserving fresh slab.
+  /// Keeping a single rectangular surface throughout prevents the separate
+  /// circle and rectangle from overlapping as a visible ghost during restart.
   @discardableResult
   private func drawRestartTransition(context: CGContext) -> Bool {
     guard let startedAt = restartStartedAt,
@@ -1348,9 +1676,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     let progress = CGFloat(min(1, max(0, elapsed / restartDuration)))
     guard progress < 1 else { return false }
 
-    if progress < 0.38 {
-      let fade = Self.smoothStep(progress / 0.38)
-      let scale = 1 - 0.025 * fade
+    if progress < 0.58 {
+      let fade = Self.smoothStep(progress / 0.58)
+      let scale = 1 - 0.018 * fade
       context.saveGState()
       context.translateBy(x: bounds.midX, y: bounds.midY)
       context.scaleBy(x: scale, y: scale)
@@ -1360,23 +1688,12 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     }
 
     let center = CGPoint(x: bounds.midX, y: bounds.midY)
-    let pulseProgress = Self.smoothStep(min(1, max(0, (progress - 0.20) / 0.28)))
-    if pulseProgress > 0 {
-      let pulseRadius = min(bounds.width, bounds.height)
-        * (0.012 + 0.105 * pulseProgress)
-      palette.covered.setFill()
-      context.fillEllipse(in: CGRect(
-        x: center.x - pulseRadius,
-        y: center.y - pulseRadius,
-        width: pulseRadius * 2,
-        height: pulseRadius * 2
-      ))
-    }
-
-    let slabProgress = Self.smoothStep(min(1, max(0, (progress - 0.38) / 0.62)))
+    let slabProgress = Self.smoothStep(min(1, max(0, (progress - 0.14) / 0.86)))
     if slabProgress > 0 {
-      let slabScale = 0.055 + 0.945 * slabProgress
+      let slabScale = 0.12 + 0.88 * slabProgress
+      let slabAlpha = Self.smoothStep(min(1, slabProgress / 0.22))
       context.saveGState()
+      context.setAlpha(slabAlpha)
       context.translateBy(x: center.x, y: center.y)
       context.scaleBy(x: slabScale, y: slabScale)
       context.translateBy(x: -center.x, y: -center.y)
@@ -1384,7 +1701,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       context.restoreGState()
 
       let promptProgress = Self.smoothStep(
-        min(1, max(0, (slabProgress - 0.72) / 0.28))
+        min(1, max(0, (slabProgress - 0.78) / 0.22))
       )
       drawReadyPrompt(in: bounds, alpha: promptProgress)
     }
@@ -1397,7 +1714,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     row: Int,
     context: CGContext
   ) {
+    guard winGlyphOpacity > 0 else { return }
     context.saveGState()
+    context.setAlpha(winGlyphOpacity)
     context.setStrokeColor(palette.gridLine.cgColor)
     context.setLineWidth(1)
     context.setLineCap(.round)
@@ -1551,58 +1870,101 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     }
   }
 
-  /// At a grid vertex occupied by three covered cells and one revealed cell,
-  /// the full-width adjacency bridges form a sharp inward corner. Extend the
-  /// covered region into the revealed quadrant with a true circular quarter;
-  /// its tangent-continuous arc avoids the pinched corners produced by the old
-  /// quadratic approximation, especially around one isolated revealed cell.
-  private func drawConcaveCoverCutouts(
+  /// At a grid vertex occupied by three cells from one visual region, the
+  /// adjacency bridges otherwise form a sharp 90-degree inward corner. Extend
+  /// that region into the missing quadrant with a tangent-continuous quarter
+  /// arc. The same contour repair is shared by covers and both flag layers.
+  private func drawConcaveRegionCorners(
     firstColumn: Int,
     lastColumn: Int,
     firstRow: Int,
-    lastRow: Int
+    lastRow: Int,
+    radius: CGFloat,
+    boundaryInset: CGFloat = 0,
+    fillColor: UIColor,
+    matches: (Int, Int) -> Bool,
+    permitsMissingQuadrant: ((Int, Int) -> Bool)? = nil
   ) {
-    let radius = Self.baseCellSize * 0.09
-    palette.covered.setFill()
+    fillColor.setFill()
+    let firstVertexRow = max(1, firstRow)
+    let lastVertexRow = min(board.rows - 1, lastRow + 1)
+    let firstVertexColumn = max(1, firstColumn)
+    let lastVertexColumn = min(board.columns - 1, lastColumn + 1)
+    guard firstVertexRow <= lastVertexRow, firstVertexColumn <= lastVertexColumn else { return }
 
-    for vertexRow in max(1, firstRow)...min(board.rows - 1, lastRow + 1) {
-      for vertexColumn in max(1, firstColumn)...min(board.columns - 1, lastColumn + 1) {
+    for vertexRow in firstVertexRow...lastVertexRow {
+      for vertexColumn in firstVertexColumn...lastVertexColumn {
         let quadrants = [
           (column: vertexColumn - 1, row: vertexRow - 1, sx: -1.0, sy: -1.0),
           (column: vertexColumn, row: vertexRow - 1, sx: 1.0, sy: -1.0),
           (column: vertexColumn - 1, row: vertexRow, sx: -1.0, sy: 1.0),
           (column: vertexColumn, row: vertexRow, sx: 1.0, sy: 1.0),
         ]
-        let covered = quadrants.map { visuallyCovered(column: $0.column, row: $0.row) }
-        guard covered.filter({ $0 }).count == 3,
-          let missing = covered.firstIndex(of: false)
+        let membership = quadrants.map { matches($0.column, $0.row) }
+        guard membership.filter({ $0 }).count == 3,
+          let missing = membership.firstIndex(of: false)
         else { continue }
         let quadrant = quadrants[missing]
-        guard visuallyRevealed(column: quadrant.column, row: quadrant.row) else { continue }
+        if let permitsMissingQuadrant,
+          !permitsMissingQuadrant(quadrant.column, quadrant.row)
+        {
+          continue
+        }
 
         let vertex = CGPoint(
           x: CGFloat(vertexColumn) * Self.baseCellSize,
           y: CGFloat(vertexRow) * Self.baseCellSize
         )
+        // An inset region has its horizontal and vertical boundaries shifted
+        // away from the missing quadrant. Move the curve's origin by the same
+        // amount and increase its radius, producing the true parallel offset
+        // of the outer contour. Painting squares around the grid vertex looks
+        // connected but rasterizes as a visible staircase at this corner.
+        let corner = CGPoint(
+          x: vertex.x - CGFloat(quadrant.sx) * boundaryInset,
+          y: vertex.y - CGFloat(quadrant.sy) * boundaryInset
+        )
         let verticalTangent = CGPoint(
-          x: vertex.x,
-          y: vertex.y + CGFloat(quadrant.sy) * radius
+          x: corner.x,
+          y: corner.y + CGFloat(quadrant.sy) * radius
         )
         let horizontalTangent = CGPoint(
-          x: vertex.x + CGFloat(quadrant.sx) * radius,
-          y: vertex.y
+          x: corner.x + CGFloat(quadrant.sx) * radius,
+          y: corner.y
         )
+        // The inset cells are composited before this repair curve. Cover the
+        // one-device-pixel antialias fringe along their former square edges
+        // on the region side of each tangent; otherwise that fringe remains
+        // visible as a faint rectangular box behind the rounded corner.
+        if boundaryInset > 0, let context = UIGraphicsGetCurrentContext() {
+          let overlap = 1 / max(1, contentScaleFactor)
+          context.saveGState()
+          context.setShouldAntialias(false)
+          UIRectFill(CGRect(
+            x: min(corner.x, horizontalTangent.x),
+            y: quadrant.sy > 0 ? corner.y - overlap : corner.y,
+            width: abs(horizontalTangent.x - corner.x),
+            height: overlap
+          ))
+          UIRectFill(CGRect(
+            x: quadrant.sx > 0 ? corner.x - overlap : corner.x,
+            y: min(corner.y, verticalTangent.y),
+            width: overlap,
+            height: abs(verticalTangent.y - corner.y)
+          ))
+          context.restoreGState()
+        }
         let kappa: CGFloat = 0.552_284_75
         let firstControl = CGPoint(
-          x: vertex.x,
-          y: vertex.y + CGFloat(quadrant.sy) * radius * (1 - kappa)
+          x: corner.x,
+          y: corner.y + CGFloat(quadrant.sy) * radius * (1 - kappa)
         )
         let secondControl = CGPoint(
-          x: vertex.x + CGFloat(quadrant.sx) * radius * (1 - kappa),
-          y: vertex.y
+          x: corner.x + CGFloat(quadrant.sx) * radius * (1 - kappa),
+          y: corner.y
         )
         let cutout = UIBezierPath()
-        cutout.move(to: vertex)
+        cutout.move(to: corner)
         cutout.addLine(to: verticalTangent)
         cutout.addCurve(
           to: horizontalTangent,
@@ -1720,12 +2082,13 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   }
 
   private func drawNumber(_ number: Int, in rect: CGRect, scale: CGFloat) {
+    guard winGlyphOpacity > 0 else { return }
     let color =
       palette.clues.indices.contains(number - 1) ? palette.clues[number - 1] : palette.foreground
     let attributes: [NSAttributedString.Key: Any] = [
       .font: UIFont(name: "Rubik-Regular", size: Self.baseCellSize * 0.58 * scale)
         ?? UIFont.systemFont(ofSize: Self.baseCellSize * 0.58 * scale, weight: .regular),
-      .foregroundColor: color,
+      .foregroundColor: color.withAlphaComponent(winGlyphOpacity),
     ]
     let string = NSString(string: "\(number)")
     let size = string.size(withAttributes: attributes)
@@ -1749,7 +2112,22 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
   }
 
   private func maintainDisplayLink(at now: CFTimeInterval = CACurrentMediaTime()) {
+    // Preserve final-frame cleanup even when the first tick after a stall
+    // arrives beyond an animation's end and clears its timestamp below.
+    if paletteTransitionStartedAt != nil || winGlyphFadeStartedAt != nil
+      || restartStartedAt != nil || (isReplayCovering && replayCoverStartedAt != nil)
+    {
+      wasInvalidatingFullCanvas = true
+    }
     updatePaletteAnimation(at: now)
+    if let startedAt = winGlyphFadeStartedAt {
+      let scale = Self.durationScale(for: animationSpeed)
+      let elapsed = now - startedAt - ReplicaMotion.winGlyphFadeDelay * scale
+      let progress = CGFloat(min(1, max(0, elapsed / (ReplicaMotion.winGlyphFadeDuration * scale))))
+      winGlyphOpacity = 1 - Self.smoothStep(progress)
+      cachedPlayingBoardImage = nil
+      if progress >= 1 { winGlyphFadeStartedAt = nil }
+    }
     if let startedAt = initialRevealStartedAt,
       now - startedAt >= initialRevealDuration
     {
@@ -1766,11 +2144,17 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       restartDuration = 0
     }
     let finalFrameTail = max(displayLink?.duration ?? (1 / 60), 1 / 120) * 1.5
+    var completedRevealIndices: Set<Int> = []
     revealStartedAt = revealStartedAt.filter { index, start in
       let duration = revealDurations[index]
         ?? 0.24 * Self.durationScale(for: animationSpeed)
-      return now < start + duration + finalFrameTail
+      let isActive = now < start + duration + finalFrameTail
+      if !isActive { completedRevealIndices.insert(index) }
+      return isActive
     }
+    // A delayed display tick can skip a cell's entire animation. Its final
+    // state still needs drawing even if no earlier frame marked it dirty.
+    previousAnimatingRevealIndices.formUnion(completedRevealIndices)
     let activeIndices = Set(revealStartedAt.keys)
     revealDurations = revealDurations.filter { activeIndices.contains($0.key) }
     let replayCoverIsAnimating = if isReplayCovering,
@@ -1782,6 +2166,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     }
     if revealStartedAt.isEmpty,
       paletteTransitionStartedAt == nil,
+      winGlyphFadeStartedAt == nil,
       initialRevealStartedAt == nil,
       restartStartedAt == nil,
       loadingPulseStartedAt == nil,
@@ -1789,7 +2174,7 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     {
       displayLink?.invalidate()
       displayLink = nil
-    } else if displayLink == nil {
+    } else if displayLink == nil, window != nil {
       displayLink = CADisplayLink(target: self, selector: #selector(animationTick))
       displayLink?.preferredFrameRateRange = CAFrameRateRange(
         minimum: 60,
@@ -1824,13 +2209,14 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       false
     }
     let invalidatesFullCanvas = paletteTransitionStartedAt != nil
-      || initialRevealStartedAt != nil
+      || winGlyphFadeStartedAt != nil
       || restartStartedAt != nil
       || replayCoverIsAnimating
     if invalidatesFullCanvas || wasInvalidatingFullCanvas {
       wasInvalidatingFullCanvas = invalidatesFullCanvas
       previousAnimatingRevealIndices.removeAll(keepingCapacity: true)
       previousLoadingPulseRect = nil
+      previousInitialRevealOverlayRect = nil
       setNeedsDisplay()
       return
     }
@@ -1861,6 +2247,29 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
       dirtyRect = dirtyRect.map { $0.union(cell) } ?? cell
     }
 
+    // The opening now changes only its revealed tiles, prompt and small
+    // touch ripple. Redrawing the whole 576/1,296-cell canvas here would undo
+    // the existing per-cell invalidation on even a tiny Extreme opening.
+    let currentInitialOverlayRect: CGRect? = if let startedAt = initialRevealStartedAt,
+      initialRevealDuration > 0,
+      now - startedAt < initialRevealDuration * 0.62
+    {
+      initialRevealOverlayBounds
+    } else {
+      nil
+    }
+    if let currentInitialOverlayRect {
+      dirtyRect = dirtyRect.map { $0.union(currentInitialOverlayRect) }
+        ?? currentInitialOverlayRect
+    }
+    if let previousInitialRevealOverlayRect {
+      // Include the last visible overlay once more when it disappears, even
+      // if a delayed display tick skips directly past the end of the reveal.
+      dirtyRect = dirtyRect.map { $0.union(previousInitialRevealOverlayRect) }
+        ?? previousInitialRevealOverlayRect
+    }
+    previousInitialRevealOverlayRect = currentInitialOverlayRect
+
     if isLoading, phase == .ready, let origin = loadingPulseOrigin {
       let extent = Self.baseCellSize * 0.55
       let pulseRect = CGRect(
@@ -1887,6 +2296,31 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
         .intersection(bounds)
       if !dirtyRect.isNull, !dirtyRect.isEmpty { setNeedsDisplay(dirtyRect) }
     }
+  }
+
+  private var initialRevealOverlayBounds: CGRect {
+    let promptCenterY = initialRevealFixedStartCoordinate.map {
+      (CGFloat($0.row) + 0.5) * Self.baseCellSize - Self.baseCellSize * 1.18
+    } ?? bounds.midY
+    // Rubik is 4.5% of board width here; this envelope includes ascenders,
+    // descenders and raster antialiasing throughout the prompt's fade.
+    let promptHalfHeight = max(Self.baseCellSize * 0.5, bounds.width * 0.06)
+    var overlay = CGRect(
+      x: bounds.minX,
+      y: promptCenterY - promptHalfHeight,
+      width: bounds.width,
+      height: promptHalfHeight * 2
+    )
+    if let origin = initialRevealOrigin {
+      let extent = Self.baseCellSize * 0.32
+      overlay = overlay.union(CGRect(
+        x: origin.x - extent,
+        y: origin.y - extent,
+        width: extent * 2,
+        height: extent * 2
+      ))
+    }
+    return overlay.intersection(bounds)
   }
 
   private func updatePalette(to revised: BoardPalette, at now: CFTimeInterval) {
@@ -1930,8 +2364,9 @@ final class BoardCanvasView: UIView, UIGestureRecognizerDelegate {
     scaleX: CGFloat = 1,
     scaleY: CGFloat = 1
   ) {
-    guard let context = UIGraphicsGetCurrentContext() else { return }
+    guard winGlyphOpacity > 0, let context = UIGraphicsGetCurrentContext() else { return }
     context.saveGState()
+    context.setAlpha(winGlyphOpacity)
     context.translateBy(x: rect.midX, y: rect.midY)
     context.scaleBy(x: scaleX, y: scaleY)
     context.translateBy(x: -rect.midX, y: -rect.midY)

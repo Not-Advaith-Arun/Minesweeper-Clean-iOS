@@ -12,6 +12,7 @@ struct GameView: View {
   @State private var showEndControls = false
   @State private var showActionToggle = false
   @State private var restartTask: Task<Void, Never>?
+  @State private var presentationTask: Task<Void, Never>?
 
   let difficulty: ReplicaDifficulty
 
@@ -51,12 +52,14 @@ struct GameView: View {
       .ignoresSafeArea()
       .accessibilityLabel("\(difficulty.title) minesweeper board")
       .accessibilityIdentifier("game.board")
+      .accessibilityHidden(showResult)
 
       GameStatusBar(
         session: session,
         paletteExpanded: $paletteExpanded,
         onClose: { leaveGame() }
       )
+      .accessibilityHidden(showResult)
 
       if session.phase.isFinished, showEndControls, !showResult {
         GeometryReader { geometry in
@@ -75,10 +78,7 @@ struct GameView: View {
           Spacer()
           ActionToggle(session: session)
         }
-        .padding(.bottom, 10)
-        // The Android control sits low on tall displays, but the same fixed
-        // offset clips the capsule on compact 667-point iPhones.
-        .offset(y: UIScreen.main.bounds.height < 750 ? 0 : 34)
+        .padding(.bottom, 18)
         .transition(.scale(scale: 0.96).combined(with: .opacity))
         .allowsHitTesting(session.phase == .playing)
       }
@@ -86,23 +86,17 @@ struct GameView: View {
       if showResult, session.phase == .won {
         Color.black.opacity(store.theme.isAMOLED ? 0.72 : 0.56).ignoresSafeArea()
           .transition(.opacity)
-        VStack(spacing: 12) {
-          WinPixelBurst(theme: store.theme)
-            .frame(width: 190, height: 104)
-            .transition(.scale(scale: 0.72).combined(with: .opacity))
-          ResultCard(
-            session: session,
-            onDismiss: {
-              withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
-                showResult = false
-              }
-              session.beginWinReplay(
-                animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed)
+        ResultCard(
+          session: session,
+          onDismiss: {
+            withAnimation(ReplicaMotion.dialogDismiss(speedPercent: store.settings.animationSpeed)) {
+              showResult = false
             }
-          )
-        }
+            session.beginWinReplay(
+              animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed)
+          }
+        )
         .padding(24)
-        .offset(y: 26)
         .transition(
           .asymmetric(
             insertion: .scale(scale: 0.96).combined(with: .opacity),
@@ -132,22 +126,31 @@ struct GameView: View {
       store.haptic(session.feedbackAction == .dig ? .reveal : .flag)
     }
     .onChange(of: session.phase) { previous, current in
+      presentationTask?.cancel()
       if current == .ready {
         showActionToggle = false
+        paletteExpanded = false
+        showEndControls = false
+        showResult = false
       } else if current.isFinished {
+        paletteExpanded = false
         // Keep the fixed action capsule present while terminal cell and camera
-        // motion play. The second terminal-state handler exchanges it for the
+        // motion play. The terminal presentation exchanges it for the
         // restart controls only after those animations have settled.
+        presentCompletion(current)
       } else if current == .playing, previous == .ready {
         let delay = !reduceMotion && store.settings.animationSpeed > 0
-          ? ReplicaMotion.duration(0.78, speedPercent: store.settings.animationSpeed) : 0
+          ? ReplicaMotion.duration(
+            ReplicaMotion.firstControlsDelay,
+            speedPercent: store.settings.animationSpeed
+          ) : 0
         guard delay > 0 else {
           showActionToggle = true
           return
         }
-        Task {
+        presentationTask = Task { @MainActor in
           try? await Task.sleep(for: .seconds(delay))
-          guard session.phase == .playing else { return }
+          guard !Task.isCancelled, session.phase == .playing else { return }
           withAnimation(ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)) {
             showActionToggle = true
           }
@@ -156,49 +159,11 @@ struct GameView: View {
         showActionToggle = true
       }
     }
-    .onChange(of: session.phase) { previous, current in
-      guard previous != current, current.isFinished else { return }
-      if current == .won, let record = session.completionRecord {
-        store.addRecord(record)
-        store.haptic(.success)
-      } else if current == .lost {
-        store.haptic(.warning)
-      }
-      store.clearSavedGame(difficulty)
-      showEndControls = false
-      showResult = false
-      let baseDelay = current == .won ? 0.86 : 1.24
-      let delay = !reduceMotion && store.settings.animationSpeed > 0
-        ? ReplicaMotion.duration(baseDelay, speedPercent: store.settings.animationSpeed) : 0
-      Task {
-        try? await Task.sleep(for: .seconds(delay))
-        guard session.phase == current else { return }
-        let terminalAnimation: Animation? = if current == .lost,
-          store.settings.animationSpeed > 0,
-          !reduceMotion
-        {
-          .easeOut(
-            duration: ReplicaMotion.duration(
-              0.12, speedPercent: store.settings.animationSpeed))
-        } else {
-          ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)
-        }
-        withAnimation(terminalAnimation) {
-          showActionToggle = false
-          showEndControls = true
-        }
-        if current == .won {
-          withAnimation(ReplicaMotion.dialogPresent(speedPercent: store.settings.animationSpeed)) {
-            showResult = true
-          }
-        }
-      }
-    }
     .onChange(of: scenePhase) { _, phase in
       switch phase {
       case .active:
         session.resumeTimerIfNeeded()
-        if session.phase == .won, !showResult, !session.isReplaying {
+        if session.phase == .won, showEndControls, !showResult, !session.isReplaying {
           session.beginWinReplay(
             animationSpeed: reduceMotion ? 0 : store.settings.animationSpeed)
         }
@@ -212,6 +177,7 @@ struct GameView: View {
     }
     .onDisappear {
       restartTask?.cancel()
+      presentationTask?.cancel()
       session.stopWinReplay()
       session.saveIfNeeded()
       store.registerSavedGame(session.savedSummary)
@@ -231,6 +197,7 @@ struct GameView: View {
   }
 
   private func leaveGame() {
+    presentationTask?.cancel()
     session.stopWinReplay()
     session.saveIfNeeded()
     store.registerSavedGame(session.savedSummary)
@@ -239,6 +206,7 @@ struct GameView: View {
 
   private func startNewGame(_ selected: ReplicaDifficulty) {
     restartTask?.cancel()
+    presentationTask?.cancel()
     // Preserve the replay's currently visible frame until the restart canvas
     // snapshots it. Restoring the solved board here creates a conspicuous
     // one-frame flash when Start new game is tapped during the covered hold.
@@ -249,7 +217,10 @@ struct GameView: View {
     }
 
     let delay = !reduceMotion && store.settings.animationSpeed > 0
-      ? ReplicaMotion.duration(0.20, speedPercent: store.settings.animationSpeed) : 0
+      ? ReplicaMotion.duration(
+        ReplicaMotion.restartControlsDismiss,
+        speedPercent: store.settings.animationSpeed
+      ) : 0
     restartTask = Task { @MainActor in
       try? await Task.sleep(for: .seconds(delay))
       guard !Task.isCancelled else { return }
@@ -257,6 +228,42 @@ struct GameView: View {
         session.restart()
       } else {
         store.replaceCurrentGame(with: selected)
+      }
+    }
+  }
+
+  private func presentCompletion(_ phase: ReplicaGamePhase) {
+    if phase == .won, let record = session.completionRecord {
+      store.addRecord(record)
+      store.haptic(.success)
+    } else if phase == .lost {
+      store.haptic(.warning)
+    }
+    store.clearSavedGame(difficulty)
+    showEndControls = false
+    showResult = false
+    let baseDelay = phase == .won ? ReplicaMotion.winResultDelay : 1.24
+    let delay = !reduceMotion && store.settings.animationSpeed > 0
+      ? ReplicaMotion.duration(baseDelay, speedPercent: store.settings.animationSpeed) : 0
+    presentationTask = Task { @MainActor in
+      try? await Task.sleep(for: .seconds(delay))
+      guard !Task.isCancelled, session.phase == phase else { return }
+      let terminalAnimation: Animation? = if phase == .lost,
+        store.settings.animationSpeed > 0,
+        !reduceMotion
+      {
+        .easeOut(duration: ReplicaMotion.duration(0.12, speedPercent: store.settings.animationSpeed))
+      } else {
+        ReplicaMotion.standard(speedPercent: store.settings.animationSpeed)
+      }
+      withAnimation(terminalAnimation) {
+        showActionToggle = false
+        showEndControls = true
+      }
+      if phase == .won {
+        withAnimation(ReplicaMotion.dialogPresent(speedPercent: store.settings.animationSpeed)) {
+          showResult = true
+        }
       }
     }
   }
@@ -310,8 +317,8 @@ private struct GameStatusBar: View {
               .frame(height: 45)
               .accessibilityIdentifier("game.timer")
           } else {
-            HStack(spacing: 3) {
-              MineLogo(theme: store.theme, size: 19, tint: store.theme.foreground)
+            HStack(spacing: 5) {
+              MineCounterIcon(theme: store.theme, size: 18, tint: store.theme.foreground)
               Text("\(session.remainingMineCount)")
                 .font(.rubik(14, weight: .medium))
                 .monospacedDigit()
@@ -341,6 +348,21 @@ private struct GameStatusBar: View {
         }
       }
       .frame(height: 76)
+      .background {
+        LinearGradient(
+          stops: [
+            .init(color: store.theme.background.opacity(0.98), location: 0),
+            .init(color: store.theme.background.opacity(0.96), location: 0.86),
+            .init(color: store.theme.background.opacity(0), location: 1),
+          ],
+          startPoint: .top,
+          endPoint: .bottom
+        )
+        .padding(.top, -100)
+        .padding(.bottom, -8)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+      }
 
       Spacer()
     }
@@ -364,6 +386,7 @@ private struct ActionToggle: View {
       actionButton(.flag)
     }
     .padding(6)
+    .background(BoardControlSurface(theme: store.theme))
     // The shared capsule is decorative glass. The two child buttons own the
     // interaction so Liquid Glass cannot collapse their independent hit areas.
     .adaptiveGlassCapsule(theme: store.theme, emphasized: true, isInteractive: false)
@@ -378,15 +401,15 @@ private struct ActionToggle: View {
     } label: {
       Group {
         if mode == .dig {
-          MineLogo(
+          MineCounterIcon(
             theme: store.theme,
             size: 20,
-            tint: session.actionMode == mode ? store.theme.background : store.theme.foreground,
+            tint: session.actionMode == mode ? store.theme.coveredForeground : store.theme.foreground,
             holeTint: session.actionMode == mode ? store.theme.covered : store.theme.background
           )
         } else {
           FlagIcon(
-            color: session.actionMode == mode ? store.theme.background : store.theme.foreground
+            color: session.actionMode == mode ? store.theme.coveredForeground : store.theme.foreground
           )
           .frame(width: 20, height: 20)
         }
@@ -459,6 +482,8 @@ private struct EndGameControls: View {
         .font(.system(size: 18, weight: .regular))
     }
     .buttonStyle(RoundIconButtonStyle(theme: store.theme, size: 44))
+    .accessibilityLabel(offset < 0 ? "Previous difficulty" : "Next difficulty")
+    .accessibilityIdentifier(offset < 0 ? "game.previousDifficulty" : "game.nextDifficulty")
   }
 }
 
@@ -495,7 +520,7 @@ private struct ResultCard: View {
             .font(.rubik(12, weight: .regular))
             .foregroundStyle(
               record.id == session.completionRecord?.id
-                ? store.theme.background
+                ? store.theme.coveredForeground
                 : store.theme.foreground.opacity(0.84)
             )
             .padding(.horizontal, 8)
@@ -515,7 +540,13 @@ private struct ResultCard: View {
     .foregroundStyle(store.theme.foreground)
     .padding(17)
     .frame(maxWidth: 360)
-    .background(SemiMatteRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true))
+    .background {
+      RoundedRectangle(cornerRadius: 9, style: .continuous)
+        .fill(store.theme.background)
+        .overlay(
+          SemiMatteRoundedSurface(theme: store.theme, cornerRadius: 9, emphasized: true)
+        )
+    }
   }
 
   private static let dateFormatter: DateFormatter = {
@@ -524,48 +555,4 @@ private struct ResultCard: View {
     formatter.dateFormat = "d MMM yyyy"
     return formatter
   }()
-}
-
-@MainActor
-private struct WinPixelBurst: View {
-  let theme: AppTheme
-
-  private static let pixels: [(x: Int, y: Int)] = [
-    (3, 0), (7, 0),
-    (1, 1), (4, 1), (6, 1), (9, 1),
-    (2, 2), (3, 2), (5, 2), (7, 2), (8, 2),
-    (0, 3), (2, 3), (4, 3), (5, 3), (6, 3), (8, 3), (10, 3),
-    (2, 4), (3, 4), (5, 4), (7, 4), (8, 4),
-    (1, 5), (4, 5), (6, 5), (9, 5),
-    (3, 6), (7, 6),
-  ]
-
-  var body: some View {
-    Canvas { context, size in
-      let usesLightCanvas = ["diletto", "rossa", "nennau"].contains(theme.id)
-      let pixelColor = usesLightCanvas ? Color.black : theme.foreground
-      let baseOpacity: CGFloat = usesLightCanvas ? 0.24 : 0.16
-      let unit = min(size.width / 12, size.height / 7.5)
-      let contentWidth = unit * 11
-      let contentHeight = unit * 7
-      let origin = CGPoint(
-        x: (size.width - contentWidth) / 2,
-        y: (size.height - contentHeight) / 2
-      )
-      for pixel in Self.pixels {
-        let variance = CGFloat((pixel.x * 7 + pixel.y * 11) % 4) * 0.035
-        let rect = CGRect(
-          x: origin.x + CGFloat(pixel.x) * unit,
-          y: origin.y + CGFloat(pixel.y) * unit,
-          width: unit * 0.72,
-          height: unit * 0.72
-        )
-        context.fill(
-          Path(rect),
-          with: .color(pixelColor.opacity(baseOpacity + variance))
-        )
-      }
-    }
-    .accessibilityHidden(true)
-  }
 }

@@ -185,6 +185,8 @@ final class GameSessionController {
   private var hasQueuedExtremeOpening = false
   private var hasAppeared = false
   private var deferredExtremePreparationFlags: Set<CellCoordinate>?
+  private var actionGeneration = 0
+  private var isTimerPaused = false
 
   init(difficulty: ReplicaDifficulty, resume: Bool, settings: UserSettings) {
     self.difficulty = difficulty
@@ -280,7 +282,9 @@ final class GameSessionController {
   }
 
   func restart() {
+    actionGeneration += 1
     stopWinReplay(restoreCompletedBoard: false)
+    isReplayCovering = false
     extremePreparationGeneration += 1
     extremePreparationTask?.cancel()
     extremePreparationTask = nil
@@ -304,8 +308,8 @@ final class GameSessionController {
   }
 
   /// Replays the exact board states produced by the player's successful game.
-  /// Clean One starts from its covered slab, compresses the recorded actions
-  /// into a short timelapse, then closes the board with a centered circular
+  /// Clean One closes the completed silhouette with a centered circular wipe,
+  /// compresses the recorded actions into a short timelapse, then repeats that
   /// wipe before looping. Keeping the timeline in the session means flags,
   /// chords, and large clearing cascades retain their real chronological order.
   func beginWinReplay(animationSpeed: Double) {
@@ -343,25 +347,28 @@ final class GameSessionController {
     let speedScale = ReplicaMotion.durationScale(speedPercent: animationSpeed)
     let openingHold = 0.42 * speedScale
     let finalHold = 0.42 * speedScale
-    let wipeDuration = 0.92 * speedScale
+    let wipeDuration = ReplicaMotion.replayCoverDuration * speedScale
     let loopHold = 0.48 * speedScale
 
     isReplaying = true
-    isReplayCovering = false
-    board = coveredBoard
+    // The first replay enters through the same circle as subsequent loops.
+    // Keep the completed silhouette underneath while the result card fades.
+    replayCoverSequence += 1
+    isReplayCovering = true
     lastChangedCoordinates = []
     lastActionCoordinate = nil
 
     replayTask = Task { [weak self] in
       guard let self else { return }
+      guard await self.holdReplay(for: wipeDuration, generation: generation) else { return }
       while self.replayGeneration == generation,
         self.phase == .won,
         !Task.isCancelled
       {
-        self.isReplayCovering = false
         self.board = coveredBoard
         self.lastChangedCoordinates = []
         self.lastActionCoordinate = nil
+        self.isReplayCovering = false
         guard await self.holdReplay(
           for: openingHold, generation: generation)
         else { return }
@@ -396,8 +403,11 @@ final class GameSessionController {
     replayGeneration += 1
     replayTask?.cancel()
     replayTask = nil
-    isReplayCovering = false
     isReplaying = false
+    // Restart dismisses its controls before the ready canvas snapshots the
+    // visible board. Removing a live circle during that delay exposes the
+    // solved silhouette for a frame; keep it until restart resets the phase.
+    if restoreCompletedBoard { isReplayCovering = false }
     if restoreCompletedBoard, phase == .won, let completedReplayBoard {
       board = completedReplayBoard
       lastChangedCoordinates = []
@@ -406,6 +416,7 @@ final class GameSessionController {
   }
 
   func saveIfNeeded() {
+    isTimerPaused = true
     guard !phase.isFinished else {
       Task { await GamePersistenceBridge.shared.removeGame(for: difficulty) }
       return
@@ -422,6 +433,7 @@ final class GameSessionController {
   }
 
   func resumeTimerIfNeeded() {
+    isTimerPaused = false
     guard phase == .playing else { return }
     var revised = engine
     revised.startTimer()
@@ -499,6 +511,7 @@ final class GameSessionController {
     lastActionCoordinate = coordinate
     let currentEngine = engine
     let coreSettings = settings.coreValue
+    let generation = actionGeneration
 
     Task { [weak self] in
       let outcome = await Task.detached(priority: .userInitiated) {
@@ -523,8 +536,14 @@ final class GameSessionController {
             errorDescription: "The board could not be generated. Please try again.")
         }
       }.value
-      guard let self else { return }
-      self.engine = outcome.engine
+      guard let self, self.actionGeneration == generation else { return }
+      var completedEngine = outcome.engine
+      // Settings and lifecycle events can change while a first board is being
+      // verified. Keep the current control selection and pause state instead
+      // of restoring the values captured before that background work began.
+      completedEngine.setActionMode(self.actionMode == .dig ? .dig : .flag)
+      if self.isTimerPaused { completedEngine.pauseTimer() }
+      self.engine = completedEngine
       self.explodedMine = outcome.result?.explodedMine
       self.errorMessage = outcome.errorDescription
       self.lastActionCoordinate = coordinate
@@ -767,12 +786,14 @@ final class GameSessionController {
       )
       : []
     let topologyMineIndices = [
-      CellCoordinate(row: 0, column: 4),
-      CellCoordinate(row: 0, column: 5),
-      CellCoordinate(row: 2, column: 4),
-      CellCoordinate(row: 3, column: 5),
-      CellCoordinate(row: 4, column: 6),
-      CellCoordinate(row: 5, column: 5),
+      // A deterministic U-shaped flag cluster exercises both inward corners
+      // of the merged moat and flagged surface in visual regression captures.
+      CellCoordinate(row: 3, column: 1),
+      CellCoordinate(row: 3, column: 2),
+      CellCoordinate(row: 3, column: 3),
+      CellCoordinate(row: 3, column: 4),
+      CellCoordinate(row: 4, column: 1),
+      CellCoordinate(row: 4, column: 4),
       CellCoordinate(row: 7, column: 0),
       CellCoordinate(row: 7, column: 1),
       CellCoordinate(row: 8, column: 4),
