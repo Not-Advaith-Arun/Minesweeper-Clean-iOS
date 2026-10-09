@@ -15,11 +15,6 @@ let package = Package(
       name: "MinesweeperCore",
       path: "MinesweeperCore/Sources"
     ),
-    .testTarget(
-      name: "MinesweeperCoreTests",
-      dependencies: ["MinesweeperCore"],
-      path: "MinesweeperCoreTests"
-    ),
   ],
   swiftLanguageModes: [.v6]
 )

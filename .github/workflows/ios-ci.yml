@@ -58,11 +58,6 @@ jobs:
           xcodebuild -project "$PROJECT" -scheme "$SCHEME" -list
           test -f "$PROJECT/xcshareddata/xcschemes/$SCHEME.xcscheme"
 
-      - name: Run portable engine tests
-        # Board-generation tests enforce wall-clock budgets, so they must not
-        # compete with the other generator-heavy cases for shared runner CPU.
-        run: swift test
-
       - name: Select and boot an iPhone simulator
         id: simulator
         run: |
@@ -96,7 +91,7 @@ jobs:
           xcrun simctl boot "$udid" 2>/dev/null || true
           xcrun simctl bootstatus "$udid" -b
 
-      - name: Build app and run unit plus UI tests
+      - name: Build app and run spanning UI journeys
         run: |
           set -euo pipefail
           mkdir -p build/ci

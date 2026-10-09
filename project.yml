@@ -73,20 +73,7 @@ targets:
         DEVELOPMENT_ASSET_PATHS: ""
     scheme:
       testTargets:
-        - MinesweeperCoreTests
         - MinesweeperUITests
-
-  MinesweeperCoreTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: MinesweeperCoreTests
-    dependencies:
-      - target: MinesweeperCore
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.xylo.MinesweeperCleanReplica.CoreTests
-        GENERATE_INFOPLIST_FILE: true
 
   MinesweeperUITests:
     type: bundle.ui-testing

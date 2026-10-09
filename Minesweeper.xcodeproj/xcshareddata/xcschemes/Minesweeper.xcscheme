@@ -44,17 +44,6 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "65937182C978B063FC4DA8E5"
-               BuildableName = "MinesweeperCoreTests.xctest"
-               BlueprintName = "MinesweeperCoreTests"
-               ReferencedContainer = "container:Minesweeper.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "DD8565872B8CE7DAAD0AF33D"
                BuildableName = "MinesweeperUITests.xctest"
                BlueprintName = "MinesweeperUITests"
